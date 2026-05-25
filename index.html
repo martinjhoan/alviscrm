@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Alvis CRM</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Botón persistente para mostrar/ocultar el menú lateral -->
+    <button class="sidebar-toggle-persistent" id="sidebarTogglePersistent" type="button" aria-label="Alternar menú lateral" title="Alternar menú lateral"></button>
+
+    <div class="app-shell" id="appShell">
+      <aside class="sidebar" aria-label="Navegacion principal">
+        <div class="brand">
+          <div class="brand-mark">A</div>
+          <div>
+            <strong>Alvis CRM</strong>
+            <span>Operacion comercial</span>
+          </div>
+        </div>
+
+        <nav class="nav-list" id="navList"></nav>
+
+        <div class="sidebar-footer">
+          <span class="status-dot"></span>
+          <span>Datos guardados localmente</span>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">CRM profesional</p>
+            <h1 id="pageTitle">Panel ejecutivo</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="icon-button" id="sidebarToggle" type="button" aria-label="Ocultar menu" title="Ocultar menu">☰</button>
+            <div class="search-wrap">
+              <span aria-hidden="true">⌕</span>
+              <input id="globalSearch" type="search" placeholder="Buscar clientes, negocios o tareas" />
+            </div>
+            <button class="icon-button" id="themeToggle" type="button" aria-label="Cambiar tema" title="Cambiar tema">◐</button>
+            <button class="primary-button" id="quickAddButton" type="button">+ Nuevo registro</button>
+          </div>
+        </header>
+
+        <section id="viewRoot" class="view-root"></section>
+      </main>
+    </div>
+
+    <dialog id="recordDialog" class="modal">
+      <form method="dialog" id="recordForm">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Crear registro</p>
+            <h2 id="modalTitle">Nuevo contacto</h2>
+          </div>
+          <button class="icon-button" value="cancel" type="submit" aria-label="Cerrar" title="Cerrar">×</button>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            Tipo
+            <select id="recordType" name="type">
+              <option value="contacts">Contacto</option>
+              <option value="companies">Empresa</option>
+              <option value="deals">Oportunidad</option>
+              <option value="tasks">Tarea</option>
+              <option value="tickets">Ticket</option>
+              <option value="campaigns">Campaña</option>
+            </select>
+          </label>
+          <label>
+            Nombre
+            <input id="recordName" name="name" required placeholder="Ej. Maria Perez" />
+          </label>
+          <label>
+            Empresa o cuenta
+            <input id="recordCompany" name="company" placeholder="Ej. Grupo Rivera" />
+          </label>
+          <label>
+            Estado
+            <select id="recordStatus" name="status"></select>
+          </label>
+          <label>
+            Valor estimado
+            <input id="recordValue" name="value" type="number" min="0" step="100" placeholder="0" />
+          </label>
+          <label>
+            Responsable
+            <input id="recordOwner" name="owner" placeholder="Ej. Ventas" />
+          </label>
+          <label class="full-field">
+            Notas
+            <textarea id="recordNotes" name="notes" rows="4" placeholder="Contexto, proximo paso o necesidad del cliente"></textarea>
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button class="secondary-button" value="cancel" type="submit">Cancelar</button>
+          <button class="primary-button" value="default" type="submit">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="channelConfigDialog" class="modal">
+      <form method="dialog" id="channelConfigForm">
+        <input type="hidden" id="configChannelId" name="id" />
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Integración comercial</p>
+            <h2 id="channelConfigTitle">Configurar canal</h2>
+          </div>
+          <button class="icon-button" value="cancel" type="submit" aria-label="Cerrar" title="Cerrar">×</button>
+        </div>
+
+        <div class="form-grid" id="channelConfigFields">
+          <!-- Dynamic fields will be injected here via JavaScript depending on the channel type -->
+        </div>
+
+        <div class="modal-actions">
+          <button class="secondary-button" value="cancel" type="submit">Cancelar</button>
+          <button class="primary-button" value="default" type="submit">Guardar configuración</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="app.js"></script>
+  </body>
+</html>

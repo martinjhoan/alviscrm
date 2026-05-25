@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # Servicio Principal: Web App de Alvis CRM
+  alvis-crm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alvis-crm-app
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5173}:5173"
+    depends_on:
+      - postgresdb
+      - redis
+    environment:
+      - NODE_ENV=production
+      - PORT=5173
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-alvis_secure_pass}@postgresdb:5432/${POSTGRES_DB:-alvis_crm}
+      - REDIS_URL=redis://redis:6379/0
+    networks:
+      - alvis-network
+
+  # Servicio de Fondo: Worker de Tareas (Equivalente a Sidekiq/BullMQ en Node)
+  alvis-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alvis-crm-worker
+    command: npm run worker
+    restart: unless-stopped
+    depends_on:
+      - postgresdb
+      - redis
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-alvis_secure_pass}@postgresdb:5432/${POSTGRES_DB:-alvis_crm}
+      - REDIS_URL=redis://redis:6379/0
+    networks:
+      - alvis-network
+
+  # Base de Datos Relacional: PostgreSQL
+  postgresdb:
+    image: postgres:15-alpine
+    container_name: alvis-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-alvis_secure_pass}
+      - POSTGRES_DB=${POSTGRES_DB:-alvis_crm}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - alvis-network
+
+  # Almacenamiento en Memoria / Cola de Mensajes: Redis
+  redis:
+    image: redis:7-alpine
+    container_name: alvis-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - alvis-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  alvis-network:
+    driver: bridge

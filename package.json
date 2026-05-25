@@ -1,0 +1,16 @@
+{
+  "name": "alvis-crm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "worker": "node worker.mjs",
+    "check": "node --check app.js && node --check server.mjs && node --check dev-server.mjs && node --check server/seed.mjs && node --check server/smoke-test.mjs && node --check worker.mjs",
+    "test": "node server/smoke-test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
