@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Servicio Principal: Web App de Alvis CRM
+  # 1. Servicio Principal: Web App de Alvis CRM
   alvis-crm:
     build:
       context: .
@@ -22,7 +22,7 @@ services:
     networks:
       - alvis-network
 
-  # Servicio de Fondo: Worker de Tareas (Equivalente a Sidekiq/BullMQ en Node)
+  # 2. Servicio de Fondo: Worker de Tareas (Equivalente a Sidekiq/BullMQ en Node)
   alvis-worker:
     build:
       context: .
@@ -40,7 +40,7 @@ services:
     networks:
       - alvis-network
 
-  # Base de Datos Relacional: PostgreSQL
+  # 3. Base de Datos Relacional: PostgreSQL (Con Auto-inicialización de Tablas)
   postgresdb:
     image: postgres:15-alpine
     container_name: alvis-postgres
@@ -53,10 +53,13 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Montajes para inicializar las tablas y datos por defecto automáticamente al iniciar el contenedor
+      - ./server/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql
+      - ./server/seed.sql:/docker-entrypoint-initdb.d/2-seed.sql
     networks:
       - alvis-network
 
-  # Almacenamiento en Memoria / Cola de Mensajes: Redis
+  # 4. Almacenamiento en Memoria / Cola de Mensajes: Redis
   redis:
     image: redis:7-alpine
     container_name: alvis-redis
