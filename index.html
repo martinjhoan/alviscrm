@@ -10,7 +10,35 @@
     <!-- Botón persistente para mostrar/ocultar el menú lateral -->
     <button class="sidebar-toggle-persistent" id="sidebarTogglePersistent" type="button" aria-label="Alternar menú lateral" title="Alternar menú lateral"></button>
 
-    <div class="app-shell" id="appShell">
+    <!-- Pantalla de Login Premium -->
+    <div class="login-wrapper" id="loginWrapper">
+      <div class="login-card">
+        <div class="login-header">
+          <div class="login-logo">A</div>
+          <h2>Bienvenido a Alvis CRM</h2>
+          <p>Ingresa tus credenciales para acceder al panel omnicanal</p>
+        </div>
+        <form id="loginForm" class="login-form">
+          <div class="input-group">
+            <label for="loginEmail">Correo electrónico</label>
+            <input type="email" id="loginEmail" required placeholder="admin@alviscrm.com" />
+          </div>
+          <div class="input-group">
+            <label for="loginPassword">Contraseña</label>
+            <input type="password" id="loginPassword" required placeholder="••••••••" />
+          </div>
+          <div id="loginError" class="login-error" style="display: none;">
+            Credenciales incorrectas. Intenta de nuevo.
+          </div>
+          <button type="submit" class="login-button">Iniciar Sesión</button>
+        </form>
+        <div class="login-footer">
+          <span>Seguridad gestionada de grado SaaS</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="app-shell" id="appShell" style="display: none;">
       <aside class="sidebar" aria-label="Navegacion principal">
         <div class="brand">
           <div class="brand-mark">A</div>
@@ -22,7 +50,14 @@
 
         <nav class="nav-list" id="navList"></nav>
 
-        <div class="sidebar-footer">
+        <div style="margin-top: auto; width: 100%;">
+          <button class="nav-button" type="button" id="logoutButton" title="Cerrar sesión" style="color: #ef4444; border-top: 1px solid rgba(255, 255, 255, 0.08); padding: 14px 12px 0 12px; border-radius: 0; display: flex; align-items: center; gap: 10px; width: 100%;">
+            <span class="nav-icon" style="color: #ef4444; background: rgba(239, 68, 68, 0.12); width: 28px; height: 28px; display: grid; place-items: center; border-radius: 7px;">⎗</span>
+            <span class="nav-label" style="color: #ef4444; font-weight: 600;">Cerrar sesión</span>
+          </button>
+        </div>
+
+        <div class="sidebar-footer" style="margin-top: 10px;">
           <span class="status-dot"></span>
           <span>Datos guardados localmente</span>
         </div>

@@ -2218,6 +2218,14 @@ function insertNewline(textarea) {
 }
 
 navList.addEventListener("click", (event) => {
+  const logoutBtn = event.target.closest("#logoutButton");
+  if (logoutBtn) {
+    sessionStorage.removeItem("alvis-session");
+    localStorage.removeItem("alvis-session");
+    window.location.reload();
+    return;
+  }
+
   const button = event.target.closest("[data-view]");
   if (!button) return;
   state.activeView = button.dataset.view;
@@ -2445,5 +2453,56 @@ if (channelConfigForm && channelConfigDialog) {
   });
 }
 
-render();
-bootstrapFromApi();
+// --- Controlador de Inicio de Sesión Premium (Login Controller) ---
+const loginForm = document.querySelector("#loginForm");
+const loginWrapper = document.querySelector("#loginWrapper");
+const loginError = document.querySelector("#loginError");
+const appShell = document.querySelector("#appShell");
+
+function checkSession() {
+  const session = sessionStorage.getItem("alvis-session") || localStorage.getItem("alvis-session");
+  if (session === "active") {
+    if (loginWrapper) loginWrapper.style.display = "none";
+    if (appShell) {
+      appShell.style.display = "grid";
+      // Asegurarse de quitar cualquier estilo inline restrictivo
+      appShell.style.removeProperty("display");
+    }
+    return true;
+  } else {
+    if (loginWrapper) loginWrapper.style.display = "flex";
+    if (appShell) appShell.style.display = "none";
+    return false;
+  }
+}
+
+if (loginForm) {
+  loginForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const email = document.querySelector("#loginEmail").value.trim();
+    const password = document.querySelector("#loginPassword").value;
+
+    if (email === "admin@alviscrm.com" && password === "admin") {
+      sessionStorage.setItem("alvis-session", "active");
+      if (loginWrapper) loginWrapper.style.display = "none";
+      if (appShell) {
+        appShell.style.display = "grid";
+        appShell.style.removeProperty("display");
+      }
+      if (loginError) loginError.style.display = "none";
+      
+      // Inicializar y renderizar CRM tras login exitoso
+      render();
+      bootstrapFromApi();
+    } else {
+      if (loginError) loginError.style.display = "flex";
+    }
+  });
+}
+
+// Inicializar la aplicación dependiendo de la sesión activa
+if (checkSession()) {
+  render();
+  bootstrapFromApi();
+}
+
