@@ -6,7 +6,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: alvis-crm-app
     restart: unless-stopped
     ports:
       - "${PORT:-5173}:5173"
@@ -27,7 +26,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: alvis-crm-worker
     command: npm run worker
     restart: unless-stopped
     depends_on:
@@ -43,14 +41,11 @@ services:
   # 3. Base de Datos Relacional: PostgreSQL (Con Auto-inicialización de Tablas)
   postgresdb:
     image: postgres:15-alpine
-    container_name: alvis-postgres
     restart: unless-stopped
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-alvis_secure_pass}
       - POSTGRES_DB=${POSTGRES_DB:-alvis_crm}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # Montajes para inicializar las tablas y datos por defecto automáticamente al iniciar el contenedor
@@ -62,11 +57,8 @@ services:
   # 4. Almacenamiento en Memoria / Cola de Mensajes: Redis
   redis:
     image: redis:7-alpine
-    container_name: alvis-redis
     restart: unless-stopped
     command: redis-server --appendonly yes
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     networks:
