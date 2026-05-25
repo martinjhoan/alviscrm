@@ -1,4 +1,4 @@
-const STORAGE_KEY = "alvis-crm-v1";
+const STORAGE_KEY = "alvis-crm-v2";
 
 const modules = [
   { id: "dashboard", label: "Panel", icon: "⌂", locked: true },
@@ -50,36 +50,14 @@ const initialState = {
   activeView: "dashboard",
   theme: "light",
   records: {
-    contacts: [
-      { id: crypto.randomUUID(), name: "Laura Jimenez", company: "Innova Legal", status: "Calificado", value: 18000, owner: "Comercial", notes: "Busca automatizar seguimiento de clientes corporativos.", createdAt: "2026-05-24" },
-      { id: crypto.randomUUID(), name: "Carlos Medina", company: "Medina Group", status: "Contactado", value: 8200, owner: "Ventas", notes: "Interesado en paquete mensual de gestion.", createdAt: "2026-05-24" }
-    ],
-    companies: [
-      { id: crypto.randomUUID(), name: "Innova Legal", company: "Servicios profesionales", status: "Activa", value: 42000, owner: "Cuentas", notes: "Cuenta prioritaria con potencial de expansion.", createdAt: "2026-05-24" },
-      { id: crypto.randomUUID(), name: "Norte Supply", company: "Distribucion", status: "Prospecto", value: 26000, owner: "Ventas", notes: "Evaluando propuesta para equipo completo.", createdAt: "2026-05-24" }
-    ],
-    deals: [
-      { id: crypto.randomUUID(), name: "Implementacion CRM", company: "Innova Legal", status: "Negociacion", value: 42000, owner: "Alvis", notes: "Decision esperada esta semana.", createdAt: "2026-05-24" },
-      { id: crypto.randomUUID(), name: "Plan comercial anual", company: "Norte Supply", status: "Propuesta", value: 26000, owner: "Alvis", notes: "Enviar comparativo de planes.", createdAt: "2026-05-24" },
-      { id: crypto.randomUUID(), name: "Capacitacion equipo", company: "Medina Group", status: "Prospecto", value: 8200, owner: "Ventas", notes: "Agendar demo con gerencia.", createdAt: "2026-05-24" }
-    ],
-    tasks: [
-      { id: crypto.randomUUID(), name: "Llamar a Laura", company: "Innova Legal", status: "Hoy", value: 0, owner: "Alvis", notes: "Confirmar alcance y fecha de inicio.", createdAt: "2026-05-24" },
-      { id: crypto.randomUUID(), name: "Enviar propuesta actualizada", company: "Norte Supply", status: "Pendiente", value: 0, owner: "Ventas", notes: "Incluir descuento por pago anual.", createdAt: "2026-05-24" }
-    ],
-    tickets: [
-      { id: crypto.randomUUID(), name: "Consulta sobre facturacion", company: "Innova Legal", status: "En revision", value: 0, owner: "Soporte", notes: "Cliente solicita desglose por servicio.", createdAt: "2026-05-24" }
-    ],
-    campaigns: [
-      { id: crypto.randomUUID(), name: "Reactivacion clientes frios", company: "Base general", status: "Activa", value: 12000, owner: "Marketing", notes: "Secuencia de 3 correos y llamada final.", createdAt: "2026-05-24" }
-    ]
+    contacts: [],
+    companies: [],
+    deals: [],
+    tasks: [],
+    tickets: [],
+    campaigns: []
   },
-  conversations: [
-    { id: crypto.randomUUID(), channel: "WhatsApp", contact: "Laura Jimenez", company: "Innova Legal", inbox: "WhatsApp Principal", team: "Ventas", status: "Abierta", priority: "Alta", labels: ["sales-lead", "vip"], sla: "12 min", lastMessage: "Perfecto, enviame la propuesta con integracion a WhatsApp.", owner: "Maria R.", updatedAt: "Hace 8 min", privateNote: "@Alvis validar plan anual antes de enviar contrato." },
-    { id: crypto.randomUUID(), channel: "Instagram", contact: "Norte Supply", company: "Norte Supply", inbox: "Instagram Leads", team: "Marketing", status: "Pendiente", priority: "Media", labels: ["new-customer"], sla: "42 min", lastMessage: "Gracias por escribirnos. Ya te conecto con ventas.", owner: "Sin asignar", updatedAt: "Hace 31 min", privateNote: "Lead entrante por campaña de automatizacion." },
-    { id: crypto.randomUUID(), channel: "Messenger", contact: "Carlos Medina", company: "Medina Group", inbox: "Facebook Page", team: "Ventas", status: "Abierta", priority: "Media", labels: ["automation"], sla: "1 h 10 min", lastMessage: "Quiero saber si el CRM puede asignar leads automatico.", owner: "Rafael C.", updatedAt: "Hoy", privateNote: "Interesado en auto-asignacion y CRM." },
-    { id: crypto.randomUUID(), channel: "Email", contact: "Finanzas Innova", company: "Innova Legal", inbox: "Soporte Email", team: "Soporte", status: "Resuelta", priority: "Baja", labels: ["billing"], sla: "Cumplido", lastMessage: "Factura recibida, muchas gracias.", owner: "Daniela P.", updatedAt: "Ayer", privateNote: "Caso cerrado con confirmacion del cliente." }
-  ],
+  conversations: [],
   channels: [
     { id: "whatsapp", name: "WhatsApp Business Cloud API", provider: "Meta", status: "Diseñado", capability: "Mensajes, plantillas, webhooks, asignacion y SLA" },
     { id: "instagram", name: "Instagram Messaging API", provider: "Meta", status: "Diseñado", capability: "DMs, comentarios, handoff a agentes y etiquetado" },

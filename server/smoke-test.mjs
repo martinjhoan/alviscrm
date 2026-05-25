@@ -1,6 +1,18 @@
 import { createAlvisServer } from "../server.mjs";
+import { createSeedData } from "./seed.mjs";
 
-const server = createAlvisServer();
+const testState = createSeedData();
+testState.conversations = [
+  { id: "test-conversation-id", channel: "WhatsApp", contact: "Smoke Contact", company: "Smoke Company", inbox: "WhatsApp Principal", team: "Ventas", status: "Abierta", priority: "Alta", labels: ["sales-lead", "vip"], sla: "12 min", lastMessage: "Perfecto, enviame la propuesta.", owner: "Maria R.", updatedAt: "Hace 8 min" }
+];
+testState.teams = [
+  { id: "test-team-id", name: "Soporte", agents: 5, open: 24, firstResponse: "1m 45s", routing: "Round-robin" }
+];
+testState.automations = [
+  { id: "test-automation-id", name: "Asignar lead nuevo", trigger: "Mensaje entrante", action: "Asignar", status: "Activa" }
+];
+
+const server = createAlvisServer(testState);
 
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 
