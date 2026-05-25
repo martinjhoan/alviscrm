@@ -40,7 +40,9 @@ services:
 
   # 3. Base de Datos Relacional: PostgreSQL (Con Auto-inicialización de Tablas)
   postgresdb:
-    image: postgres:15-alpine
+    build:
+      context: .
+      dockerfile: database.Dockerfile
     restart: unless-stopped
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
@@ -48,9 +50,6 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-alvis_crm}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Montajes para inicializar las tablas y datos por defecto automáticamente al iniciar el contenedor
-      - ./server/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql
-      - ./server/seed.sql:/docker-entrypoint-initdb.d/2-seed.sql
     networks:
       - alvis-network
 
