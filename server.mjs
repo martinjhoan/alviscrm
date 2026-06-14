@@ -442,6 +442,23 @@ async function handleApiDb(request, response, url) {
         return;
       }
 
+      if (direction === "outgoing") {
+        const recipientId = await getRecipientIdFromConversation(conversationId);
+        if (recipientId) {
+          const { rows: convRows } = await pool.query("SELECT channel_id FROM conversations WHERE id = $1", [conversationId]);
+          const channelId = convRows[0]?.channel_id;
+          if (channelId) {
+            try {
+              await sendOutgoingMessageToChannel(channelId, recipientId, text);
+            } catch (err) {
+              console.error("❌ Falló el envío externo al canal:", err.message);
+              sendJson(response, 500, { error: err.message });
+              return;
+            }
+          }
+        }
+      }
+
       const messageId = randomUUID();
       await pool.query(
         "INSERT INTO messages (id, conversation_id, direction, text, is_private) VALUES ($1, $2, $3, $4, $5)",
@@ -458,15 +475,6 @@ async function handleApiDb(request, response, url) {
         const currentResponder = convRows[0]?.responder || "bot";
         if (currentResponder === "bot") {
           await handleBotResponse(conversationId, text, false);
-        }
-      } else if (direction === "outgoing") {
-        const recipientId = await getRecipientIdFromConversation(conversationId);
-        if (recipientId) {
-          const { rows: convRows } = await pool.query("SELECT channel_id FROM conversations WHERE id = $1", [conversationId]);
-          const channelId = convRows[0]?.channel_id;
-          if (channelId) {
-            await sendOutgoingMessageToChannel(channelId, recipientId, text);
-          }
         }
       }
 
@@ -921,23 +929,50 @@ async function handleApiDb(request, response, url) {
 
         if (incomingText && senderId) {
           let contactId = null;
-          let contactQuery = "";
-          let queryParam = "";
+          let contactRows = [];
+          
           if (channelId === "whatsapp") {
-            contactQuery = "SELECT id FROM contacts WHERE phone = $1 OR notes LIKE $2 LIMIT 1";
-            queryParam = `%WhatsApp Phone: ${senderId}%`;
-          } else if (channelId === "instagram") {
-            contactQuery = "SELECT id FROM contacts WHERE instagram_psid = $1 OR notes LIKE $2 LIMIT 1";
-            queryParam = `%Instagram PSID: ${senderId}%`;
-          } else if (channelId === "messenger") {
-            contactQuery = "SELECT id FROM contacts WHERE messenger_psid = $1 OR notes LIKE $2 LIMIT 1";
-            queryParam = `%Messenger PSID: ${senderId}%`;
+            const query = `
+              SELECT id FROM contacts 
+              WHERE phone = $1 
+                 OR phone = $2 
+                 OR phone = $3
+                 OR notes LIKE $4 
+                 OR notes LIKE $5
+                 OR notes LIKE $6
+              LIMIT 1
+            `;
+            const cleanPhone = senderId.replace(/\D/g, "");
+            const plusPhone = "+" + cleanPhone;
+            const localPhone = cleanPhone.startsWith("1") ? cleanPhone.slice(1) : cleanPhone;
+            
+            const params = [
+              cleanPhone,
+              plusPhone,
+              localPhone,
+              `%WhatsApp Phone: ${cleanPhone}%`,
+              `%WhatsApp Phone: ${plusPhone}%`,
+              `%WhatsApp Phone: ${localPhone}%`
+            ];
+            const res = await pool.query(query, params);
+            contactRows = res.rows;
           } else {
-            contactQuery = "SELECT id FROM contacts WHERE notes LIKE $2 LIMIT 1";
-            queryParam = `%${noteMarker}%`;
+            let contactQuery = "";
+            let queryParam = "";
+            if (channelId === "instagram") {
+              contactQuery = "SELECT id FROM contacts WHERE instagram_psid = $1 OR notes LIKE $2 LIMIT 1";
+              queryParam = `%Instagram PSID: ${senderId}%`;
+            } else if (channelId === "messenger") {
+              contactQuery = "SELECT id FROM contacts WHERE messenger_psid = $1 OR notes LIKE $2 LIMIT 1";
+              queryParam = `%Messenger PSID: ${senderId}%`;
+            } else {
+              contactQuery = "SELECT id FROM contacts WHERE notes LIKE $2 LIMIT 1";
+              queryParam = `%${noteMarker}%`;
+            }
+            const res = await pool.query(contactQuery, [senderId, queryParam]);
+            contactRows = res.rows;
           }
 
-          const { rows: contactRows } = await pool.query(contactQuery, [senderId, queryParam]);
           if (contactRows.length > 0) {
             contactId = contactRows[0].id;
           } else {
@@ -1849,71 +1884,77 @@ async function getRecipientIdFromConversation(conversationId) {
 }
 
 async function sendOutgoingMessageToChannel(channelId, recipientId, text) {
-  try {
-    const { rows } = await pool.query("SELECT config FROM channels WHERE id = $1 LIMIT 1", [channelId]);
-    if (rows.length === 0) return;
-    const config = rows[0].config || {};
+  const { rows } = await pool.query("SELECT config FROM channels WHERE id = $1 LIMIT 1", [channelId]);
+  if (rows.length === 0) {
+    throw new Error(`Canal ${channelId} no encontrado en la base de datos.`);
+  }
+  const config = rows[0].config || {};
 
-    if (channelId === "whatsapp") {
-      const phoneId = config.phoneId;
-      const accessToken = config.accessToken;
-      if (!phoneId || !accessToken) {
-        console.warn("⚠️ Meta API: Falta Phone ID o Access Token en la configuración de WhatsApp.");
-        return;
-      }
-
-      const cleanPhone = recipientId.replace(/\D/g, "");
-      console.log(`📤 Enviando WhatsApp a ${cleanPhone} usando Phone ID ${phoneId}...`);
-      const response = await fetch(`https://graph.facebook.com/v18.0/${phoneId}/messages`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          recipient_type: "individual",
-          to: cleanPhone,
-          type: "text",
-          text: { body: text }
-        })
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error(`❌ Error en respuesta de API de WhatsApp: ${errText}`);
-      } else {
-        console.log(`✅ Mensaje enviado exitosamente a WhatsApp: ${cleanPhone}`);
-      }
-    } else if (channelId === "instagram" || channelId === "messenger") {
-      const pageAccessToken = config.pageAccessToken;
-      if (!pageAccessToken) {
-        console.warn(`⚠️ Meta API: Falta Page Access Token en la configuración de ${channelId}.`);
-        return;
-      }
-
-      console.log(`📤 Enviando DM a ${channelId} (destinatario PSID: ${recipientId})...`);
-      const response = await fetch(`https://graph.facebook.com/v18.0/me/messages`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${pageAccessToken}`
-        },
-        body: JSON.stringify({
-          recipient: { id: recipientId },
-          message: { text: text }
-        })
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error(`❌ Error en respuesta de API de ${channelId}: ${errText}`);
-      } else {
-        console.log(`✅ DM enviado exitosamente a ${channelId}: ${recipientId}`);
-      }
+  if (channelId === "whatsapp") {
+    const phoneId = config.phoneId;
+    const accessToken = config.accessToken;
+    if (!phoneId || !accessToken) {
+      throw new Error("Meta API: Falta Phone ID o Access Token en la configuración de WhatsApp.");
     }
-  } catch (err) {
-    console.error(`❌ Error al enviar mensaje saliente al canal ${channelId}:`, err.message);
+
+    const cleanPhone = recipientId.replace(/\D/g, "");
+    console.log(`📤 Enviando WhatsApp a ${cleanPhone} usando Phone ID ${phoneId}...`);
+    const response = await fetch(`https://graph.facebook.com/v18.0/${phoneId}/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${accessToken}`
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: cleanPhone,
+        type: "text",
+        text: { body: text }
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`❌ Error en respuesta de API de WhatsApp: ${errText}`);
+      let detail = errText;
+      try {
+        const parsed = JSON.parse(errText);
+        detail = parsed.error?.message || errText;
+      } catch {}
+      throw new Error(`Error de API de WhatsApp (Meta): ${detail}`);
+    }
+    console.log(`✅ Mensaje enviado exitosamente a WhatsApp: ${cleanPhone}`);
+  } else if (channelId === "instagram" || channelId === "messenger") {
+    const pageAccessToken = config.pageAccessToken;
+    if (!pageAccessToken) {
+      throw new Error(`Meta API: Falta Page Access Token en la configuración de ${channelId}.`);
+    }
+
+    console.log(`📤 Enviando DM a ${channelId} (destinatario PSID: ${recipientId})...`);
+    const response = await fetch(`https://graph.facebook.com/v18.0/me/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${pageAccessToken}`
+      },
+      body: JSON.stringify({
+        recipient: { id: recipientId },
+        message: { text: text }
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`❌ Error en respuesta de API de ${channelId}: ${errText}`);
+      let detail = errText;
+      try {
+        const parsed = JSON.parse(errText);
+        detail = parsed.error?.message || errText;
+      } catch {}
+      throw new Error(`Error de API de ${channelId} (Meta): ${detail}`);
+    }
+    console.log(`✅ DM enviado exitosamente a ${channelId}: ${recipientId}`);
   }
 }
 
@@ -2245,7 +2286,11 @@ async function handleBotResponse(conversationId, incomingText, isMemoryMode, mem
       const { rows: convRows } = await pool.query("SELECT channel_id FROM conversations WHERE id = $1", [conversationId]);
       const channelId = convRows[0]?.channel_id;
       if (channelId) {
-        await sendOutgoingMessageToChannel(channelId, recipientId, cleanText);
+        try {
+          await sendOutgoingMessageToChannel(channelId, recipientId, cleanText);
+        } catch (botSendErr) {
+          console.error(`❌ El bot no pudo enviar mensaje saliente al canal ${channelId}:`, botSendErr.message);
+        }
       }
     }
   }

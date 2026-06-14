@@ -2325,14 +2325,22 @@ textarea {
 }
 
 body.inbox-mode .nav-label,
-body.inbox-mode .sidebar-footer {
+body.inbox-mode .sidebar-footer,
+body.inbox-mode .nav-count,
+body.inbox-mode .nav-category-header {
   display: none !important;
+}
+
+.inbox-mode .nav-list {
+  padding-top: 50px !important;
 }
 
 .inbox-mode .nav-button {
   grid-template-columns: 1fr !important;
   justify-content: center !important;
-  padding: 10px 0 !important;
+  align-items: center !important;
+  padding: 12px 0 !important;
+  min-height: 48px !important;
   color: #4b5563 !important;
 }
 
@@ -2363,9 +2371,11 @@ body.inbox-mode .sidebar-footer {
 .inbox-mode .nav-icon {
   background: transparent !important;
   color: inherit !important;
-  font-size: 1.3rem !important;
+  font-size: 1.35rem !important;
   width: 100% !important;
-  height: auto !important;
+  height: 32px !important; /* Altura fija para centrar el icono unicode sin colapsarse */
+  display: grid !important;
+  place-items: center !important;
 }
 
 /* Chatwoot Shell Layout */

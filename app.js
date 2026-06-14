@@ -2771,6 +2771,7 @@ function insertNewline(textarea) {
 const logoutButton = document.querySelector("#logoutButton");
 if (logoutButton) {
   logoutButton.addEventListener("click", () => {
+    stopPolling();
     const shell = document.querySelector('.app-shell');
     shell?.classList.remove('nav-open');
     sessionStorage.removeItem("alvis-session");
@@ -3148,6 +3149,7 @@ async function handleCredentialResponse(response) {
       
       render();
       bootstrapFromApi();
+      startPolling();
     }
   } catch (error) {
     if (loginError) {
@@ -3211,6 +3213,7 @@ if (devBypassBtn) {
         
         render();
         bootstrapFromApi();
+        startPolling();
       }
     } catch (error) {
       if (loginError) {
@@ -3219,6 +3222,27 @@ if (devBypassBtn) {
       }
     }
   });
+}
+
+let pollIntervalId = null;
+
+function startPolling() {
+  if (pollIntervalId) return;
+  pollIntervalId = setInterval(() => {
+    const session = sessionStorage.getItem("alvis-session") || localStorage.getItem("alvis-session");
+    if (session === "active") {
+      bootstrapFromApi();
+    } else {
+      stopPolling();
+    }
+  }, 4000);
+}
+
+function stopPolling() {
+  if (pollIntervalId) {
+    clearInterval(pollIntervalId);
+    pollIntervalId = null;
+  }
 }
 
 function syncHashToView() {
@@ -3246,5 +3270,6 @@ if (checkSession()) {
   }
   render();
   bootstrapFromApi();
+  startPolling();
 }
 
