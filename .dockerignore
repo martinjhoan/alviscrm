@@ -1,0 +1,10 @@
+# Excluir archivos sensibles y de desarrollo del contenedor Docker
+.env
+.env.local
+.env.*.local
+.git
+.gitignore
+node_modules
+*.log
+*.md
+docs/
