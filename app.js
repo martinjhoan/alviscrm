@@ -615,6 +615,11 @@ function applyLayoutPreferences() {
     }
     sidebarToggle.setAttribute("aria-label", sidebarToggle.title);
   }
+  
+  const statusText = document.querySelector(".sidebar-footer span:last-child");
+  if (statusText) {
+    statusText.textContent = apiAvailable ? "Conectado al servidor" : "Datos guardados localmente";
+  }
 }
 
 function renderDashboard() {
