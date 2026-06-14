@@ -403,6 +403,15 @@ button {
   font-size: 0.84rem;
 }
 
+.hide-brand .sidebar-footer span:last-child {
+  display: none;
+}
+
+.hide-brand .sidebar-footer {
+  justify-content: center;
+  padding: 12px 0;
+}
+
 /* Category Menu Styling */
 .nav-category-group {
   display: grid;
