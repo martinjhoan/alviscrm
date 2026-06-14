@@ -62,6 +62,9 @@ CREATE TABLE IF NOT EXISTS contacts (
     value NUMERIC(12, 2) DEFAULT 0.00,
     owner_id UUID REFERENCES agents(id) ON DELETE SET NULL,
     notes TEXT,
+    phone VARCHAR(50),
+    instagram_psid VARCHAR(100),
+    messenger_psid VARCHAR(100),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 

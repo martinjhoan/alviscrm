@@ -64,6 +64,13 @@ async function runMigrations() {
       ADD COLUMN IF NOT EXISTS responder VARCHAR(20) DEFAULT 'bot';
     `);
 
+    await pool.query(`
+      ALTER TABLE contacts
+      ADD COLUMN IF NOT EXISTS phone VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS instagram_psid VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS messenger_psid VARCHAR(100);
+    `);
+
     // Auto-seed channels if empty
     const { rows: channelCountRows } = await pool.query("SELECT COUNT(*) FROM channels");
     if (Number(channelCountRows[0].count) === 0) {
@@ -223,7 +230,7 @@ export function createAlvisServer(state) {
   return createServer(async (request, response) => {
     const url = new URL(request.url || "/", `http://${request.headers.host}`);
 
-    if (url.pathname.startsWith("/api/")) {
+    if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/webhooks/")) {
       if (!isMemoryMode) {
         await handleApiDb(request, response, url);
       } else {
@@ -254,6 +261,7 @@ async function handleApiDb(request, response, url) {
     const automationMatch = url.pathname.match(/^\/api\/automations\/([^/]+)$/);
     const channelPatchMatch = url.pathname.match(/^\/api\/channels\/([^/]+)$/);
     const webhookMatch = url.pathname.match(/^\/api\/webhooks\/([^/]+)$/);
+    const legacyWebhookMatch = url.pathname.match(/^\/webhooks\/whatsapp\/(\+?\d+)$/);
 
     if (request.method === "GET" && url.pathname === "/api/health") {
       try {
@@ -387,6 +395,42 @@ async function handleApiDb(request, response, url) {
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/conversations") {
+      const payload = await readJson(request);
+      const { contactId, channelId } = payload;
+      if (!contactId || !channelId) {
+        sendJson(response, 422, { error: "Contact ID y Channel ID son obligatorios" });
+        return;
+      }
+
+      const { rows: existing } = await pool.query("SELECT id FROM conversations WHERE contact_id = $1 AND channel_id = $2 LIMIT 1", [contactId, channelId]);
+      if (existing.length > 0) {
+        const conversation = await loadConversationByIdFromDb(existing[0].id);
+        sendJson(response, 200, { conversation });
+        return;
+      }
+
+      const id = randomUUID();
+      const channelNames = {
+        whatsapp: "WhatsApp",
+        instagram: "Instagram",
+        messenger: "Messenger",
+        email: "Email",
+        sms: "SMS",
+        webchat: "Web Chat"
+      };
+      const channelName = channelNames[channelId] || channelId;
+
+      await pool.query(`
+        INSERT INTO conversations (id, channel_id, contact_id, inbox, status, priority, labels, last_message, responder)
+        VALUES ($1, $2, $3, $4, 'Abierta', 'Media', ARRAY[]::varchar[], 'Conversación iniciada desde el CRM', 'bot')
+      `, [id, channelId, contactId, `${channelName} CRM`]);
+
+      const conversation = await loadConversationByIdFromDb(id);
+      sendJson(response, 201, { conversation });
+      return;
+    }
+
     if (request.method === "POST" && messageMatch) {
       const conversationId = messageMatch[1];
       const payload = await readJson(request);
@@ -414,6 +458,15 @@ async function handleApiDb(request, response, url) {
         const currentResponder = convRows[0]?.responder || "bot";
         if (currentResponder === "bot") {
           await handleBotResponse(conversationId, text, false);
+        }
+      } else if (direction === "outgoing") {
+        const recipientId = await getRecipientIdFromConversation(conversationId);
+        if (recipientId) {
+          const { rows: convRows } = await pool.query("SELECT channel_id FROM conversations WHERE id = $1", [conversationId]);
+          const channelId = convRows[0]?.channel_id;
+          if (channelId) {
+            await sendOutgoingMessageToChannel(channelId, recipientId, text);
+          }
         }
       }
 
@@ -536,9 +589,14 @@ async function handleApiDb(request, response, url) {
       }
 
       if (type === "contacts") {
+        const notesValue = payload.notes || "";
+        let finalNotes = notesValue;
+        if (payload.phone && !notesValue.includes("WhatsApp Phone:")) {
+          finalNotes = `WhatsApp Phone: ${payload.phone}\n${notesValue}`;
+        }
         await pool.query(
-          "INSERT INTO contacts (id, name, company_name, status, value, owner_id, notes) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-          [id, recordName, payload.company, payload.status, payload.value || 0, ownerId, payload.notes]
+          "INSERT INTO contacts (id, name, company_name, status, value, owner_id, notes, phone, instagram_psid, messenger_psid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+          [id, recordName, payload.company, payload.status, payload.value || 0, ownerId, finalNotes, payload.phone || null, payload.instagram_psid || null, payload.messenger_psid || null]
         );
       } else if (type === "companies") {
         await pool.query(
@@ -578,6 +636,9 @@ async function handleApiDb(request, response, url) {
         value: Number(payload.value || 0),
         owner: payload.owner || "Sin asignar",
         notes: payload.notes || "",
+        phone: payload.phone || "",
+        instagram_psid: payload.instagram_psid || "",
+        messenger_psid: payload.messenger_psid || "",
         createdAt: new Date().toISOString().slice(0, 10)
       };
 
@@ -801,8 +862,8 @@ async function handleApiDb(request, response, url) {
       return;
     }
 
-    if (webhookMatch) {
-      const channelId = webhookMatch[1];
+    if (webhookMatch || legacyWebhookMatch) {
+      const channelId = webhookMatch ? webhookMatch[1] : "whatsapp";
 
       if (request.method === "GET") {
         const mode = url.searchParams.get("hub.mode");
@@ -831,26 +892,72 @@ async function handleApiDb(request, response, url) {
         const payload = await readJson(request);
         console.log(`📩 Webhook recibido para canal ${channelId}:`, JSON.stringify(payload, null, 2));
 
+        let incomingText = "";
+        let senderId = "";
+        let contactName = "";
+        let noteMarker = "";
+
         const entry = payload.entry?.[0];
-        const change = entry?.changes?.[0];
-        const value = change?.value;
-        const msg = value?.messages?.[0];
+        if (channelId === "whatsapp") {
+          const change = entry?.changes?.[0];
+          const value = change?.value;
+          const msg = value?.messages?.[0];
+          if (msg && msg.text?.body) {
+            incomingText = msg.text.body;
+            senderId = msg.from;
+            contactName = value?.contacts?.[0]?.profile?.name || `WhatsApp User ${senderId}`;
+            noteMarker = `WhatsApp Phone: ${senderId}`;
+          }
+        } else if (channelId === "instagram" || channelId === "messenger") {
+          const messaging = entry?.messaging?.[0];
+          const msg = messaging?.message;
+          if (msg && msg.text) {
+            incomingText = msg.text;
+            senderId = messaging.sender?.id;
+            contactName = `${channelId === 'instagram' ? 'Instagram' : 'Messenger'} User ${senderId}`;
+            noteMarker = `${channelId === 'instagram' ? 'Instagram' : 'Messenger'} PSID: ${senderId}`;
+          }
+        }
 
-        if (msg && msg.text?.body) {
-          const incomingText = msg.text.body;
-          const fromPhone = msg.from;
-          const contactName = value?.contacts?.[0]?.profile?.name || `WhatsApp User ${fromPhone}`;
-
+        if (incomingText && senderId) {
           let contactId = null;
-          const { rows: contactRows } = await pool.query("SELECT id FROM contacts WHERE notes LIKE $1 LIMIT 1", [`%WhatsApp Phone: ${fromPhone}%`]);
+          let contactQuery = "";
+          let queryParam = "";
+          if (channelId === "whatsapp") {
+            contactQuery = "SELECT id FROM contacts WHERE phone = $1 OR notes LIKE $2 LIMIT 1";
+            queryParam = `%WhatsApp Phone: ${senderId}%`;
+          } else if (channelId === "instagram") {
+            contactQuery = "SELECT id FROM contacts WHERE instagram_psid = $1 OR notes LIKE $2 LIMIT 1";
+            queryParam = `%Instagram PSID: ${senderId}%`;
+          } else if (channelId === "messenger") {
+            contactQuery = "SELECT id FROM contacts WHERE messenger_psid = $1 OR notes LIKE $2 LIMIT 1";
+            queryParam = `%Messenger PSID: ${senderId}%`;
+          } else {
+            contactQuery = "SELECT id FROM contacts WHERE notes LIKE $2 LIMIT 1";
+            queryParam = `%${noteMarker}%`;
+          }
+
+          const { rows: contactRows } = await pool.query(contactQuery, [senderId, queryParam]);
           if (contactRows.length > 0) {
             contactId = contactRows[0].id;
           } else {
             contactId = randomUUID();
-            await pool.query(
-              "INSERT INTO contacts (id, name, company_name, status, value, notes) VALUES ($1, $2, 'WhatsApp Contact', 'Nuevo', 0, $3)",
-              [contactId, contactName, `WhatsApp Phone: ${fromPhone}`]
-            );
+            let insertQuery = "";
+            let insertParams = [];
+            if (channelId === "whatsapp") {
+              insertQuery = "INSERT INTO contacts (id, name, company_name, status, value, notes, phone) VALUES ($1, $2, $3, 'Nuevo', 0, $4, $5)";
+              insertParams = [contactId, contactName, "WhatsApp Contact", noteMarker, senderId];
+            } else if (channelId === "instagram") {
+              insertQuery = "INSERT INTO contacts (id, name, company_name, status, value, notes, instagram_psid) VALUES ($1, $2, $3, 'Nuevo', 0, $4, $5)";
+              insertParams = [contactId, contactName, "Instagram DM", noteMarker, senderId];
+            } else if (channelId === "messenger") {
+              insertQuery = "INSERT INTO contacts (id, name, company_name, status, value, notes, messenger_psid) VALUES ($1, $2, $3, 'Nuevo', 0, $4, $5)";
+              insertParams = [contactId, contactName, "Messenger Chat", noteMarker, senderId];
+            } else {
+              insertQuery = "INSERT INTO contacts (id, name, company_name, status, value, notes) VALUES ($1, $2, $3, 'Nuevo', 0, $4)";
+              insertParams = [contactId, contactName, "External Contact", noteMarker];
+            }
+            await pool.query(insertQuery, insertParams);
           }
 
           let conversationId = null;
@@ -860,8 +967,8 @@ async function handleApiDb(request, response, url) {
           } else {
             conversationId = randomUUID();
             await pool.query(
-              "INSERT INTO conversations (id, channel_id, contact_id, inbox, status, priority, labels, last_message, responder) VALUES ($1, $2, $3, 'WhatsApp Webhook', 'Abierta', 'Media', ARRAY[]::varchar[], $4, 'bot')",
-              [conversationId, channelId, contactId, incomingText]
+              "INSERT INTO conversations (id, channel_id, contact_id, inbox, status, priority, labels, last_message, responder) VALUES ($1, $2, $3, $4, 'Abierta', 'Media', ARRAY[]::varchar[], $5, 'bot')",
+              [conversationId, channelId, contactId, `${channelId.toUpperCase()} Webhook`, incomingText]
             );
           }
 
@@ -935,7 +1042,7 @@ async function bootstrapFromDb() {
   };
 
   const { rows: contacts } = await pool.query(`
-    SELECT c.id, c.name, c.company_name AS company, c.status, c.value, COALESCE(a.name, 'Sin asignar') AS owner, c.notes, TO_CHAR(c.created_at, 'YYYY-MM-DD') AS "createdAt"
+    SELECT c.id, c.name, c.company_name AS company, c.status, c.value, COALESCE(a.name, 'Sin asignar') AS owner, c.notes, c.phone, c.instagram_psid AS "instagram_psid", c.messenger_psid AS "messenger_psid", TO_CHAR(c.created_at, 'YYYY-MM-DD') AS "createdAt"
     FROM contacts c LEFT JOIN agents a ON c.owner_id = a.id ORDER BY c.created_at DESC
   `);
   const { rows: companies } = await pool.query(`
@@ -1018,7 +1125,7 @@ async function loadConversationsFromDb() {
       } else {
         contactId = randomUUID();
         await pool.query(
-          "INSERT INTO contacts (id, name, company_name, status, value, notes) VALUES ($1, 'Cliente Demo', 'Empresa de Prueba', 'Nuevo', 1000, 'Creado automáticamente como seed')",
+          "INSERT INTO contacts (id, name, company_name, status, value, notes, phone) VALUES ($1, 'Cliente Demo', 'Empresa de Prueba', 'Nuevo', 1000, 'WhatsApp Phone: +18095551234\nCreado automáticamente como seed', '+18095551234')",
           [contactId]
         );
       }
@@ -1224,6 +1331,7 @@ async function handleApiMemory(request, response, url, state) {
     const automationMatch = url.pathname.match(/^\/api\/automations\/([^/]+)$/);
     const channelPatchMatch = url.pathname.match(/^\/api\/channels\/([^/]+)$/);
     const webhookMatch = url.pathname.match(/^\/api\/webhooks\/([^/]+)$/);
+    const legacyWebhookMatch = url.pathname.match(/^\/webhooks\/whatsapp\/(\+?\d+)$/);
 
     if (request.method === "GET" && url.pathname === "/api/health") {
       sendJson(response, 200, { ok: true, service: "alvis-crm-api" });
@@ -1256,6 +1364,55 @@ async function handleApiMemory(request, response, url, state) {
 
     if (request.method === "GET" && url.pathname === "/api/conversations") {
       sendJson(response, 200, state.conversations);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/conversations") {
+      const payload = await readJson(request);
+      const { contactId, channelId } = payload;
+      if (!contactId || !channelId) {
+        sendJson(response, 422, { error: "Contact ID y Channel ID son obligatorios" });
+        return;
+      }
+
+      const contact = state.records.contacts.find(c => c.id === contactId);
+      if (!contact) {
+        sendJson(response, 404, { error: "Contacto no encontrado" });
+        return;
+      }
+
+      const channelNames = {
+        whatsapp: "WhatsApp",
+        instagram: "Instagram",
+        messenger: "Messenger",
+        email: "Email",
+        sms: "SMS",
+        webchat: "Web Chat"
+      };
+      const channelName = channelNames[channelId] || channelId;
+
+      let conversation = state.conversations.find(c => c.contact === contact.name && c.channel === channelName);
+      if (!conversation) {
+        conversation = {
+          id: randomUUID(),
+          channel: channelName,
+          contact: contact.name,
+          company: contact.company || "",
+          inbox: `${channelName} Local`,
+          team: "Soporte",
+          status: "Abierta",
+          priority: "Media",
+          labels: [],
+          lastMessage: "Conversación iniciada desde el CRM",
+          owner: "Sin asignar",
+          responder: "bot",
+          updatedAt: "Ahora",
+          messages: []
+        };
+        state.conversations.unshift(conversation);
+      }
+
+      sendJson(response, 200, { conversation });
       return;
     }
 
@@ -1355,6 +1512,11 @@ async function handleApiMemory(request, response, url, state) {
         return;
       }
 
+      const notesValue = String(payload.notes || "").trim();
+      let finalNotes = notesValue;
+      if (payload.phone && !notesValue.includes("WhatsApp Phone:")) {
+        finalNotes = `WhatsApp Phone: ${payload.phone}\n${notesValue}`;
+      }
       const record = {
         id: randomUUID(),
         name: String(payload.name || "").trim(),
@@ -1362,7 +1524,10 @@ async function handleApiMemory(request, response, url, state) {
         status: String(payload.status || "").trim(),
         value: Number(payload.value || 0),
         owner: String(payload.owner || "").trim(),
-        notes: String(payload.notes || "").trim(),
+        notes: finalNotes,
+        phone: String(payload.phone || "").trim(),
+        instagram_psid: String(payload.instagram_psid || "").trim(),
+        messenger_psid: String(payload.messenger_psid || "").trim(),
         createdAt: new Date().toISOString().slice(0, 10)
       };
 
@@ -1497,8 +1662,8 @@ async function handleApiMemory(request, response, url, state) {
       return;
     }
 
-    if (webhookMatch) {
-      const channelId = webhookMatch[1];
+    if (webhookMatch || legacyWebhookMatch) {
+      const channelId = webhookMatch ? webhookMatch[1] : "whatsapp";
 
       if (request.method === "GET") {
         const mode = url.searchParams.get("hub.mode");
@@ -1652,6 +1817,104 @@ function readJson(request) {
     });
     request.on("error", reject);
   });
+}
+
+async function getRecipientIdFromConversation(conversationId) {
+  const { rows } = await pool.query(`
+    SELECT c.channel_id, co.phone, co.instagram_psid, co.messenger_psid, co.notes 
+    FROM conversations c
+    JOIN contacts co ON c.contact_id = co.id
+    WHERE c.id = $1
+  `, [conversationId]);
+
+  if (rows.length === 0) return null;
+  const channelId = rows[0].channel_id;
+  const notes = rows[0].notes || "";
+
+  if (channelId === "whatsapp") {
+    if (rows[0].phone) return rows[0].phone;
+    const match = notes.match(/WhatsApp Phone:\s*(\+?\d+)/);
+    return match ? match[1] : null;
+  } else if (channelId === "instagram") {
+    if (rows[0].instagram_psid) return rows[0].instagram_psid;
+    const match = notes.match(/Instagram PSID:\s*(\w+)/);
+    return match ? match[1] : null;
+  } else if (channelId === "messenger") {
+    if (rows[0].messenger_psid) return rows[0].messenger_psid;
+    const match = notes.match(/Messenger PSID:\s*(\w+)/);
+    return match ? match[1] : null;
+  }
+
+  return null;
+}
+
+async function sendOutgoingMessageToChannel(channelId, recipientId, text) {
+  try {
+    const { rows } = await pool.query("SELECT config FROM channels WHERE id = $1 LIMIT 1", [channelId]);
+    if (rows.length === 0) return;
+    const config = rows[0].config || {};
+
+    if (channelId === "whatsapp") {
+      const phoneId = config.phoneId;
+      const accessToken = config.accessToken;
+      if (!phoneId || !accessToken) {
+        console.warn("⚠️ Meta API: Falta Phone ID o Access Token en la configuración de WhatsApp.");
+        return;
+      }
+
+      const cleanPhone = recipientId.replace(/\D/g, "");
+      console.log(`📤 Enviando WhatsApp a ${cleanPhone} usando Phone ID ${phoneId}...`);
+      const response = await fetch(`https://graph.facebook.com/v18.0/${phoneId}/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          recipient_type: "individual",
+          to: cleanPhone,
+          type: "text",
+          text: { body: text }
+        })
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error(`❌ Error en respuesta de API de WhatsApp: ${errText}`);
+      } else {
+        console.log(`✅ Mensaje enviado exitosamente a WhatsApp: ${cleanPhone}`);
+      }
+    } else if (channelId === "instagram" || channelId === "messenger") {
+      const pageAccessToken = config.pageAccessToken;
+      if (!pageAccessToken) {
+        console.warn(`⚠️ Meta API: Falta Page Access Token en la configuración de ${channelId}.`);
+        return;
+      }
+
+      console.log(`📤 Enviando DM a ${channelId} (destinatario PSID: ${recipientId})...`);
+      const response = await fetch(`https://graph.facebook.com/v18.0/me/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${pageAccessToken}`
+        },
+        body: JSON.stringify({
+          recipient: { id: recipientId },
+          message: { text: text }
+        })
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error(`❌ Error en respuesta de API de ${channelId}: ${errText}`);
+      } else {
+        console.log(`✅ DM enviado exitosamente a ${channelId}: ${recipientId}`);
+      }
+    }
+  } catch (err) {
+    console.error(`❌ Error al enviar mensaje saliente al canal ${channelId}:`, err.message);
+  }
 }
 
 async function handleBotResponse(conversationId, incomingText, isMemoryMode, memoryState) {
@@ -1974,6 +2237,16 @@ async function handleBotResponse(conversationId, incomingText, isMemoryMode, mem
         ) 
         WHERE id = $2
       `, [detectedLabels, conversationId]);
+    }
+
+    // Send bot response to external channel
+    const recipientId = await getRecipientIdFromConversation(conversationId);
+    if (recipientId) {
+      const { rows: convRows } = await pool.query("SELECT channel_id FROM conversations WHERE id = $1", [conversationId]);
+      const channelId = convRows[0]?.channel_id;
+      if (channelId) {
+        await sendOutgoingMessageToChannel(channelId, recipientId, cleanText);
+      }
     }
   }
 }

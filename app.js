@@ -242,6 +242,84 @@ async function createRecord(type, record) {
   return payload.record;
 }
 
+async function startConversation(contactId, channelId) {
+  if (!apiAvailable) {
+    const contact = state.records.contacts.find(c => c.id === contactId);
+    if (!contact) return;
+
+    const channelNames = {
+      whatsapp: "WhatsApp",
+      instagram: "Instagram",
+      messenger: "Messenger"
+    };
+    const channelName = channelNames[channelId] || channelId;
+
+    let conversation = state.conversations.find(c => c.contact === contact.name && c.channel === channelName);
+    if (!conversation) {
+      conversation = {
+        id: crypto.randomUUID(),
+        channel: channelName,
+        contact: contact.name,
+        company: contact.company || "",
+        inbox: `${channelName} Local`,
+        team: "Soporte",
+        status: "Abierta",
+        priority: "Media",
+        labels: [],
+        lastMessage: "Conversación iniciada desde el CRM",
+        owner: "Sin asignar",
+        responder: "bot",
+        updatedAt: "Ahora",
+        messages: []
+      };
+      state.conversations.unshift(conversation);
+    }
+
+    state.activeView = "inbox";
+    location.hash = "#inbox";
+    selectedConversationId = conversation.id;
+    activeConversationTab = "all";
+    saveState();
+    render();
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/conversations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify({ contactId, channelId })
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || "No se pudo iniciar la conversación");
+    }
+
+    const data = await response.json();
+    const conversation = data.conversation;
+
+    const existingIdx = state.conversations.findIndex(c => c.id === conversation.id);
+    if (existingIdx === -1) {
+      state.conversations.unshift(conversation);
+    } else {
+      state.conversations[existingIdx] = conversation;
+    }
+
+    state.activeView = "inbox";
+    location.hash = "#inbox";
+    selectedConversationId = conversation.id;
+    activeConversationTab = "all";
+    saveState();
+    render();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
 async function createConversationMessage(conversationId, text, direction = "outgoing") {
   if (!apiAvailable) {
     const conversation = state.conversations.find((item) => item.id === conversationId);
@@ -579,7 +657,10 @@ function render() {
   document.documentElement.dataset.theme = state.theme;
   document.body.classList.toggle("inbox-mode", state.activeView === "inbox");
   applyLayoutPreferences();
-  if (!isModuleEnabled(state.activeView)) state.activeView = "dashboard";
+  if (!isModuleEnabled(state.activeView)) {
+    state.activeView = "dashboard";
+    location.hash = "#dashboard";
+  }
   renderNav();
   const module = modules.find((item) => item.id === state.activeView);
   pageTitle.textContent = module?.label === "Panel" ? "Panel ejecutivo" : module?.label || "CRM";
@@ -1354,6 +1435,7 @@ function tableMarkup(records, type) {
     }
   }
 
+  const isContacts = type === "contacts";
   return `
     <table>
       <thead>
@@ -1364,6 +1446,7 @@ function tableMarkup(records, type) {
           <th>Valor</th>
           <th>Responsable</th>
           <th>Notas</th>
+          ${isContacts ? `<th>Acciones</th>` : ""}
         </tr>
       </thead>
       <tbody>
@@ -1377,6 +1460,13 @@ function tableMarkup(records, type) {
                 <td>${money(record.value)}</td>
                 <td>${escapeHtml(record.owner || "-")}</td>
                 <td>${escapeHtml(record.notes || "-")}</td>
+                ${isContacts ? `
+                  <td>
+                    <div style="display: flex; gap: 8px;">
+                      <button class="primary-button compact" type="button" data-start-chat="${record.id}" data-channel="whatsapp" title="Iniciar Chat WhatsApp">💬 WA</button>
+                    </div>
+                  </td>
+                ` : ""}
               </tr>
             `
           )
@@ -2559,6 +2649,10 @@ function labelSingular(type) {
 
 function updateStatusOptions() {
   recordStatus.innerHTML = statusByType[recordType.value].map((status) => `<option value="${status}">${status}</option>`).join("");
+  const contactFields = document.querySelector("#contactSpecificFields");
+  if (contactFields) {
+    contactFields.style.display = recordType.value === "contacts" ? "grid" : "none";
+  }
 }
 
 function exportCsv(type) {
@@ -2689,7 +2783,9 @@ navList.addEventListener("click", (event) => {
 
   const button = event.target.closest("[data-view]");
   if (!button) return;
-  state.activeView = button.dataset.view;
+  const view = button.dataset.view;
+  location.hash = "#" + view;
+  state.activeView = view;
   saveState();
   render();
 });
@@ -2707,6 +2803,12 @@ viewRoot.addEventListener("click", (event) => {
   const configureChannelButton = event.target.closest("[data-configure-channel]");
   const responderToggleButton = event.target.closest("[data-toggle-responder]");
   const simulateIncomingButton = event.target.closest("[data-simulate-incoming]");
+  const startChatButton = event.target.closest("[data-start-chat]");
+
+  if (startChatButton) {
+    startConversation(startChatButton.dataset.startChat, startChatButton.dataset.channel);
+    return;
+  }
 
   if (responderToggleButton) {
     toggleResponder(responderToggleButton.dataset.toggleResponder);
@@ -2751,7 +2853,9 @@ viewRoot.addEventListener("click", (event) => {
   if (createButton) openCreateModal(createButton.dataset.openCreate);
   if (exportButton) exportCsv(exportButton.dataset.export);
   if (shortcutButton) {
-    state.activeView = shortcutButton.dataset.viewShortcut;
+    const view = shortcutButton.dataset.viewShortcut;
+    location.hash = "#" + view;
+    state.activeView = view;
     saveState();
     render();
   }
@@ -2907,6 +3011,9 @@ recordForm.addEventListener("submit", (event) => {
     value: Number(formData.get("value") || 0),
     owner: formData.get("owner"),
     notes: formData.get("notes"),
+    phone: formData.get("phone") || "",
+    instagram_psid: formData.get("instagram_psid") || "",
+    messenger_psid: formData.get("messenger_psid") || "",
     createdAt: new Date().toISOString().slice(0, 10)
   };
 
@@ -3114,7 +3221,29 @@ if (devBypassBtn) {
   });
 }
 
+function syncHashToView() {
+  const hash = location.hash.replace(/^#/, "");
+  const validModules = modules.map(m => m.id);
+  if (hash && validModules.includes(hash)) {
+    if (state.activeView !== hash) {
+      state.activeView = hash;
+      saveState();
+      render();
+    }
+  }
+}
+window.addEventListener("hashchange", syncHashToView);
+
 if (checkSession()) {
+  const initialHash = location.hash.replace(/^#/, "");
+  const validModules = modules.map(m => m.id);
+  if (initialHash && validModules.includes(initialHash)) {
+    state.activeView = initialHash;
+  } else if (state.activeView) {
+    location.hash = "#" + state.activeView;
+  } else {
+    location.hash = "#dashboard";
+  }
   render();
   bootstrapFromApi();
 }

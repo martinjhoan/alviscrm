@@ -153,6 +153,20 @@
             Responsable
             <input id="recordOwner" name="owner" placeholder="Ej. Ventas" />
           </label>
+          <div id="contactSpecificFields" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; grid-column: 1 / -1;">
+            <label style="margin: 0;">
+              Teléfono / WhatsApp
+              <input id="recordPhone" name="phone" placeholder="Ej. +18095551234" style="margin-top: 5px;" />
+            </label>
+            <label style="margin: 0;">
+              Instagram PSID
+              <input id="recordInstagram" name="instagram_psid" placeholder="Ej. 654210987654" style="margin-top: 5px;" />
+            </label>
+            <label style="margin: 0;">
+              Messenger PSID
+              <input id="recordMessenger" name="messenger_psid" placeholder="Ej. 10928374656" style="margin-top: 5px;" />
+            </label>
+          </div>
           <label class="full-field">
             Notas
             <textarea id="recordNotes" name="notes" rows="4" placeholder="Contexto, proximo paso o necesidad del cliente"></textarea>
