@@ -58,6 +58,36 @@ try {
     visibility: "Publica",
     actions: ["Asignar equipo: Soporte"]
   });
+  // Test Development Bypass Auth
+  const authBypass = await postJson(`${baseUrl}/api/auth/google`, { credential: "bypass", bypass: true });
+  
+  // Test Bot Response logic
+  // 1. Send incoming message when responder is "bot" (default)
+  const incomingMsg = await postJson(`${baseUrl}/api/conversations/${firstConversation.id}/messages`, {
+    text: "Hola, me interesa comprar",
+    direction: "incoming"
+  });
+  
+  // Verify bot auto-responded in memory
+  const bootstrapAfterBot = await getJson(`${baseUrl}/api/bootstrap`);
+  const convAfterBot = bootstrapAfterBot.conversations.find(c => c.id === firstConversation.id);
+  const lastMsg = convAfterBot.messages[convAfterBot.messages.length - 1];
+  
+  // 2. Toggle responder to "human"
+  const toggledRes = await patchJson(`${baseUrl}/api/conversations/${firstConversation.id}`, {
+    responder: "human"
+  });
+  
+  // 3. Send incoming message when responder is "human"
+  const incomingMsg2 = await postJson(`${baseUrl}/api/conversations/${firstConversation.id}/messages`, {
+    text: "Hola, ¿hay alguien?",
+    direction: "incoming"
+  });
+  
+  // Verify bot did NOT respond
+  const bootstrapAfterHuman = await getJson(`${baseUrl}/api/bootstrap`);
+  const convAfterHuman = bootstrapAfterHuman.conversations.find(c => c.id === firstConversation.id);
+  const lastMsg2 = convAfterHuman.messages[convAfterHuman.messages.length - 1];
 
   assert(health.ok, "health debe responder ok");
   assert(Array.isArray(bootstrap.conversations), "bootstrap debe incluir conversaciones");
@@ -69,6 +99,12 @@ try {
   assert(updatedTeam.team.routing === "Carga balanceada", "PATCH de equipo debe actualizar enrutamiento");
   assert(updatedAutomation.automation.status === "Borrador", "PATCH de flujo debe actualizar estado");
   assert(createdMacro.macro.name === "Smoke Macro Test", "POST de macro debe crear macro");
+  
+  assert(authBypass.success && authBypass.agent, "Bypass authentication must succeed");
+  assert(lastMsg.direction === "outgoing", "Bot must respond automatically to incoming message");
+  assert(lastMsg.text.includes("[Demo Bot"), "Bot response should be mock fallback");
+  assert(toggledRes.conversation.responder === "human", "Responder should toggle to human");
+  assert(lastMsg2.direction === "incoming", "Bot must NOT respond when responder is human");
 
   console.log("Smoke test OK");
 } finally {

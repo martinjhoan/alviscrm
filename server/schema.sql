@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     last_message TEXT,
     owner_id UUID REFERENCES agents(id) ON DELETE SET NULL,
     private_note TEXT,
+    responder VARCHAR(20) DEFAULT 'bot',
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -175,6 +176,15 @@ CREATE TABLE IF NOT EXISTS manager_settings (
     agent_capacity INTEGER DEFAULT 5,
     routing_method VARCHAR(100) DEFAULT 'round-robin',
     google_client_id VARCHAR(255),
+    bot_enabled BOOLEAN DEFAULT TRUE,
+    bot_provider VARCHAR(50) DEFAULT 'openai',
+    bot_model VARCHAR(100) DEFAULT 'gpt-4o',
+    bot_api_key VARCHAR(255) DEFAULT '',
+    bot_instructions TEXT DEFAULT 'Eres un asistente de atención al cliente útil y educado para Alvis CRM.',
+    bot_resolution_timeout INTEGER DEFAULT 30,
+    bot_transfer_human_keywords TEXT DEFAULT 'humano, agente, asesor, persona',
+    bot_auto_label BOOLEAN DEFAULT TRUE,
+    bot_auto_priority BOOLEAN DEFAULT TRUE,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 

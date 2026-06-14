@@ -16,7 +16,32 @@ export function createSeedData() {
       tickets: [],
       campaigns: []
     },
-    conversations: [],
+    conversations: [
+      {
+        id: "c2222222-2222-2222-2222-222222222222",
+        channel: "WhatsApp",
+        contact: "Cliente Demo",
+        company: "Empresa de Prueba",
+        inbox: "WhatsApp Principal",
+        team: "Soporte",
+        status: "Abierta",
+        priority: "Alta",
+        labels: ["sales-lead", "vip"],
+        lastMessage: "Hola, me gustaría recibir información.",
+        owner: "Maria R.",
+        responder: "bot",
+        updatedAt: "Ahora",
+        messages: [
+          {
+            id: "m2222222-2222-2222-2222-222222222222",
+            direction: "incoming",
+            text: "Hola, me gustaría recibir información.",
+            time: "Ahora",
+            createdAt: new Date().toISOString()
+          }
+        ]
+      }
+    ],
     channels: [
       { id: "whatsapp", name: "WhatsApp Business Cloud API", provider: "Meta", status: "Diseñado", capability: "Mensajes, plantillas, webhooks, asignacion y SLA" },
       { id: "instagram", name: "Instagram Messaging API", provider: "Meta", status: "Diseñado", capability: "DMs, comentarios, handoff a agentes y etiquetado" },
@@ -33,7 +58,7 @@ export function createSeedData() {
     teams: [
       { id: randomUUID(), name: "Soporte", agents: 5, open: 24, firstResponse: "1m 45s", resolution: "2h 30m", routing: "Round-robin" },
       { id: randomUUID(), name: "Ventas", agents: 3, open: 8, firstResponse: "3m 10s", resolution: "6h 20m", routing: "Por prioridad" },
-      { id: randomUUID(), name: "Marketing", agents: 2, open: 5, firstResponse: "4m 05s", resolution: "4h 15m", routing: "Por campana" },
+      { id: randomUUID(), name: "Marketing", agents: 2, open: 5, firstResponse: "4m 05s", resolution: "4h 15m", routing: "Por campaña" },
       { id: randomUUID(), name: "Tecnico", agents: 4, open: 6, firstResponse: "7m 40s", resolution: "8h 05m", routing: "Escalamiento" }
     ],
     macros: [

@@ -49,6 +49,7 @@ const statusByType = {
 const initialState = {
   activeView: "dashboard",
   theme: "light",
+  publicUrl: "",
   records: {
     contacts: [],
     companies: [],
@@ -59,9 +60,9 @@ const initialState = {
   },
   conversations: [],
   channels: [
-    { id: "whatsapp", name: "WhatsApp Business Cloud API", provider: "Meta", status: "Diseñado", capability: "Mensajes, plantillas, webhooks, asignacion y SLA" },
+    { id: "whatsapp", name: "WhatsApp Business Cloud API", provider: "Meta", status: "Diseñado", capability: "Mensajes, plantillas, webhooks, asignación y SLA" },
     { id: "instagram", name: "Instagram Messaging API", provider: "Meta", status: "Diseñado", capability: "DMs, comentarios, handoff a agentes y etiquetado" },
-    { id: "messenger", name: "Messenger Platform", provider: "Meta", status: "Diseñado", capability: "Conversaciones, respuestas rapidas y automatizaciones" },
+    { id: "messenger", name: "Messenger Platform", provider: "Meta", status: "Diseñado", capability: "Conversaciones, respuestas rápidas y automatizaciones" },
     { id: "email", name: "Email IMAP/SMTP", provider: "Nativo", status: "Planificado", capability: "Bandeja, respuestas, tracking y secuencias" },
     { id: "sms", name: "SMS", provider: "Proveedor externo", status: "Planificado", capability: "Notificaciones, OTP y campañas transaccionales" },
     { id: "webchat", name: "Web Chat", provider: "Alvis", status: "Planificado", capability: "Widget embebido, bots y captura de leads" }
@@ -74,12 +75,12 @@ const initialState = {
   teams: [
     { id: crypto.randomUUID(), name: "Soporte", agents: 5, open: 24, firstResponse: "1m 45s", resolution: "2h 30m", routing: "Round-robin" },
     { id: crypto.randomUUID(), name: "Ventas", agents: 3, open: 8, firstResponse: "3m 10s", resolution: "6h 20m", routing: "Por prioridad" },
-    { id: crypto.randomUUID(), name: "Marketing", agents: 2, open: 5, firstResponse: "4m 05s", resolution: "4h 15m", routing: "Por campana" },
-    { id: crypto.randomUUID(), name: "Tecnico", agents: 4, open: 6, firstResponse: "7m 40s", resolution: "8h 05m", routing: "Escalamiento" }
+    { id: crypto.randomUUID(), name: "Marketing", agents: 2, open: 5, firstResponse: "4m 05s", resolution: "4h 15m", routing: "Por campaña" },
+    { id: crypto.randomUUID(), name: "Técnico", agents: 4, open: 6, firstResponse: "7m 40s", resolution: "8h 05m", routing: "Escalamiento" }
   ],
   macros: [
     { id: crypto.randomUUID(), name: "Transferir a ventas", visibility: "Publica", actions: ["Asignar equipo: Ventas", "Agregar etiqueta: sales-lead", "Enviar respuesta de agenda"] },
-    { id: crypto.randomUUID(), name: "Escalar a soporte tecnico", visibility: "Publica", actions: ["Asignar equipo: Tecnico", "Prioridad: Alta", "Nota interna con contexto"] },
+    { id: crypto.randomUUID(), name: "Escalar a soporte técnico", visibility: "Publica", actions: ["Asignar equipo: Técnico", "Prioridad: Alta", "Nota interna con contexto"] },
     { id: crypto.randomUUID(), name: "Cerrar con encuesta", visibility: "Publica", actions: ["Enviar CSAT", "Resolver conversacion", "Enviar transcripcion"] },
     { id: crypto.randomUUID(), name: "Seguimiento luego", visibility: "Privada", actions: ["Posponer 24h", "Agregar etiqueta: follow-up", "Crear tarea"] }
   ],
@@ -95,7 +96,16 @@ const initialState = {
       Baja: 240
     },
     agentCapacity: 5,
-    routingMethod: "round-robin"
+    routingMethod: "round-robin",
+    botEnabled: true,
+    botProvider: "openai",
+    botModel: "gpt-4o",
+    botApiKey: "",
+    botInstructions: "Eres un asistente de atención al cliente útil y educado para Alvis CRM.",
+    botResolutionTimeout: 30,
+    botTransferHumanKeywords: "humano, agente, asesor, persona",
+    botAutoLabel: true,
+    botAutoPriority: true
   },
   preferences: structuredClone(defaultPreferences)
 };
@@ -139,6 +149,7 @@ function normalizeState(savedState) {
   const nextState = structuredClone(initialState);
   nextState.activeView = savedState.activeView || nextState.activeView;
   nextState.theme = savedState.theme || nextState.theme;
+  nextState.publicUrl = savedState.publicUrl || nextState.publicUrl;
   nextState.records = { ...nextState.records, ...(savedState.records || {}) };
   nextState.conversations = savedState.conversations || nextState.conversations;
   nextState.channels = savedState.channels || nextState.channels;
@@ -287,6 +298,15 @@ async function updateManagerSettings(updates) {
   if (updates.slaLimits) state.managerSettings.slaLimits = { ...state.managerSettings.slaLimits, ...updates.slaLimits };
   if (updates.agentCapacity !== undefined) state.managerSettings.agentCapacity = Number(updates.agentCapacity);
   if (updates.routingMethod) state.managerSettings.routingMethod = String(updates.routingMethod);
+  if (updates.botEnabled !== undefined) state.managerSettings.botEnabled = !!updates.botEnabled;
+  if (updates.botProvider !== undefined) state.managerSettings.botProvider = String(updates.botProvider);
+  if (updates.botModel !== undefined) state.managerSettings.botModel = String(updates.botModel);
+  if (updates.botApiKey !== undefined) state.managerSettings.botApiKey = String(updates.botApiKey);
+  if (updates.botInstructions !== undefined) state.managerSettings.botInstructions = String(updates.botInstructions);
+  if (updates.botResolutionTimeout !== undefined) state.managerSettings.botResolutionTimeout = Number(updates.botResolutionTimeout);
+  if (updates.botTransferHumanKeywords !== undefined) state.managerSettings.botTransferHumanKeywords = String(updates.botTransferHumanKeywords);
+  if (updates.botAutoLabel !== undefined) state.managerSettings.botAutoLabel = !!updates.botAutoLabel;
+  if (updates.botAutoPriority !== undefined) state.managerSettings.botAutoPriority = !!updates.botAutoPriority;
 
   if (!apiAvailable) {
     saveState();
@@ -301,7 +321,7 @@ async function updateManagerSettings(updates) {
     });
     saveState();
   } catch (error) {
-    console.error("No se pudo guardar la configuracion del supervisor:", error);
+    console.error("No se pudo guardar la configuración del supervisor:", error);
   }
 }
 
@@ -345,7 +365,7 @@ async function updateAutomationOnServer(automationId, updates) {
     });
     saveState();
   } catch (error) {
-    console.error("No se pudo actualizar la automatizacion:", error);
+    console.error("No se pudo actualizar la automatización:", error);
   }
 }
 
@@ -391,7 +411,7 @@ async function createAutomationOnServer(automation) {
       return payload.automation;
     }
   } catch (error) {
-    console.error("No se pudo crear la automatizacion:", error);
+    console.error("No se pudo crear la automatización:", error);
   }
   state.automations.unshift(automation);
   saveState();
@@ -460,20 +480,38 @@ function getOrderedModules() {
 
 function renderNav() {
   const ordered = getOrderedModules();
-  navList.innerHTML = ordered
-    .map((item) => {
-      const count = state.records[item.id]?.length ?? state[item.id]?.length ?? "";
-      const active = state.activeView === item.id ? "active" : "";
-      return `
-        <button class="nav-button ${active}" type="button" data-view="${item.id}" title="${item.label}" draggable="true" data-drag-id="${item.id}">
-          <span class="nav-icon">${item.icon}</span>
-          <span class="nav-label">${item.label}</span>
-          ${state.preferences.layout.showNavCounts ? `<span class="nav-count">${count}</span>` : ""}
-        </button>
-      `;
-    })
-    .join("");
+  
+  const categories = {
+    "CRM": ["dashboard", "contacts", "companies", "deals", "tasks", "tickets"],
+    "Conversaciones": ["inbox", "channels"],
+    "Automatización": ["automations", "macros", "campaigns"],
+    "Análisis/Config": ["manager", "teams", "reports", "settings"]
+  };
 
+  let html = "";
+  for (const [catName, catModuleIds] of Object.entries(categories)) {
+    const catModules = ordered.filter(item => catModuleIds.includes(item.id));
+    if (catModules.length > 0) {
+      html += `
+        <div class="nav-category-group" data-category="${catName}">
+          <div class="nav-category-header">${catName}</div>
+          ${catModules.map(item => {
+            const count = state.records[item.id]?.length ?? state[item.id]?.length ?? "";
+            const active = state.activeView === item.id ? "active" : "";
+            return `
+              <button class="nav-button ${active}" type="button" data-view="${item.id}" title="${item.label}" draggable="true" data-drag-id="${item.id}">
+                <span class="nav-icon">${item.icon}</span>
+                <span class="nav-label">${item.label}</span>
+                ${state.preferences.layout.showNavCounts ? `<span class="nav-count">${count}</span>` : ""}
+              </button>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+  }
+
+  navList.innerHTML = html;
   attachNavDragHandlers();
 }
 
@@ -568,8 +606,13 @@ function applyLayoutPreferences() {
   document.body.classList.toggle("hide-channel-tools", !layout.showChannelTools);
   document.body.classList.toggle("hide-contact-panel", !layout.showContactPanel);
   if (sidebarToggle) {
-    sidebarToggle.textContent = layout.showSidebar ? "☰" : "☷";
-    sidebarToggle.title = layout.showSidebar ? "Ocultar menu" : "Mostrar menu";
+    if (window.innerWidth <= 768) {
+      sidebarToggle.textContent = "☰";
+      sidebarToggle.title = "Alternar menú";
+    } else {
+      sidebarToggle.textContent = layout.showSidebar ? "☰" : "☷";
+      sidebarToggle.title = layout.showSidebar ? "Ocultar menu" : "Mostrar menu";
+    }
     sidebarToggle.setAttribute("aria-label", sidebarToggle.title);
   }
 }
@@ -594,7 +637,7 @@ function renderDashboard() {
       <section class="panel">
         <div class="panel-header">
           <div>
-            <p class="eyebrow">Mensajeria</p>
+            <p class="eyebrow">Mensajería</p>
             <h2>Inbox unificado</h2>
           </div>
           <button class="ghost-button" type="button" data-view-shortcut="inbox">Ver inbox</button>
@@ -619,7 +662,7 @@ function renderDashboard() {
         <div class="panel-header">
           <div>
             <p class="eyebrow">Prioridad</p>
-            <h2>Proximas acciones</h2>
+            <h2>Próximas acciones</h2>
           </div>
           ${isModuleEnabled("tasks") ? `<button class="ghost-button" type="button" data-open-create="tasks">+ Tarea</button>` : ""}
         </div>
@@ -633,7 +676,7 @@ function renderDashboard() {
       <div class="panel-header">
         <div>
           <p class="eyebrow">Actividad</p>
-          <h2>Ultimos registros</h2>
+          <h2>Últimos registros</h2>
         </div>
       </div>
       <div class="table-wrap">${tableMarkup(records.slice(0, 8))}</div>
@@ -776,7 +819,7 @@ function getChannelProfile(channel = "WhatsApp") {
     key: "omni",
     title: "Todos los canales",
     brand: "Centro omnicanal",
-    subtitle: "Vista consolidada de todas las mensajerias",
+    subtitle: "Vista consolidada de todas las mensajerías",
     logo: "*",
     composer: "Responder en el canal seleccionado",
     action: "Enviar",
@@ -800,7 +843,10 @@ function conversationDetail(conversation, profile = getChannelProfile(conversati
             <h2>${escapeHtml(conversation.contact)}</h2>
             <p>💬 ${escapeHtml(conversation.inbox || "Bandeja principal")}</p>
           </div>
-          <div class="chatwoot-header-actions">
+          <div class="chatwoot-header-actions" style="display: flex; align-items: center; gap: 8px;">
+            <button class="chatwoot-responder-toggle-btn ${conversation.responder === 'human' ? 'human-active' : 'bot-active'}" type="button" data-toggle-responder="${conversation.id}" title="Alternar entre responder con Bot o Humano">
+              ${conversation.responder === 'human' ? '👤 Humano' : '🤖 Bot AI'}
+            </button>
             <div class="chatwoot-btn-group">
               <button class="chatwoot-resolve-btn" type="button" data-toggle-resolved="${conversation.id}">
                 ${conversation.status === "Resuelta" ? "Reabrir" : "Resolver"}
@@ -863,6 +909,11 @@ function conversationDetail(conversation, profile = getChannelProfile(conversati
             <p>${escapeHtml(conversation.privateNote)}</p>
           </div>
         ` : ""}
+        <div class="sidebar-action-section" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--line);">
+          <button class="secondary-button compact" style="width: 100%; justify-content: center; display: flex; align-items: center; gap: 6px;" type="button" data-simulate-incoming="${conversation.id}">
+            📥 Simular Entrada
+          </button>
+        </div>
       </aside>
     </div>
   `;
@@ -951,7 +1002,7 @@ function renderChannels() {
       <div class="panel-header">
         <div>
           <p class="eyebrow">Integraciones nativas</p>
-          <h2>Canales de mensajeria</h2>
+          <h2>Canales de mensajería</h2>
         </div>
       </div>
       <div class="channel-grid">
@@ -966,7 +1017,7 @@ function renderAutomations() {
     <section class="panel">
       <div class="panel-header">
         <div>
-          <p class="eyebrow">Automatizacion comercial</p>
+          <p class="eyebrow">Automatización comercial</p>
           <h2>Flujos sobre mensajes y CRM</h2>
         </div>
       </div>
@@ -1005,8 +1056,8 @@ function renderTeams() {
     <section class="panel">
       <div class="panel-header">
         <div>
-          <p class="eyebrow">Operacion por equipos</p>
-          <h2>Asignacion, colas y rendimiento</h2>
+          <p class="eyebrow">Operación por equipos</p>
+          <h2>Asignación, colas y rendimiento</h2>
         </div>
       </div>
       <div class="channel-grid">
@@ -1024,7 +1075,7 @@ function renderTeams() {
                 </div>
                 <dl class="detail-list">
                   <div><dt>Primera respuesta</dt><dd>${escapeHtml(team.firstResponse)}</dd></div>
-                  <div><dt>Resolucion</dt><dd>${escapeHtml(team.resolution)}</dd></div>
+                  <div><dt>Resolución</dt><dd>${escapeHtml(team.resolution)}</dd></div>
                 </dl>
                 <div class="detail-expand-panel" style="display:none">
                   <hr style="border:0;border-top:1px solid var(--border,rgba(0,0,0,.08));margin:12px 0"/>
@@ -1213,12 +1264,16 @@ function inboxConversationCard(conversation, active = false, showChannel = false
   };
   const chInfo = channelIcons[conversation.channel] || `💬 ${conversation.channel}`;
 
+  const responderLabel = conversation.responder === "human" ? "👤 Humano" : "🤖 Bot";
+  const responderClass = conversation.responder === "human" ? "human" : "bot";
+
   return `
     <button class="chatwoot-chat-item ${active ? 'active' : ''}" type="button" data-open-conversation="${conversation.id}">
       <div class="chatwoot-item-avatar" style="background: ${avatarBg}">${initials(conversation.contact)}</div>
       <div class="chatwoot-item-content">
         <div class="chatwoot-item-meta-row">
           <span class="chatwoot-item-inbox">${chInfo}</span>
+          <span class="chatwoot-card-responder ${responderClass}">${responderLabel}</span>
           <span class="chatwoot-item-assignee">${escapeHtml(conversation.owner || "Sin asignar")} · ${escapeHtml(conversation.updatedAt)}</span>
         </div>
         <strong class="chatwoot-item-name">${escapeHtml(conversation.contact)}</strong>
@@ -1248,8 +1303,48 @@ function channelCard(channel) {
   `;
 }
 
-function tableMarkup(records) {
-  if (!records.length) return empty("No hay registros que coincidan con la busqueda.");
+function tableMarkup(records, type) {
+  if (!records.length) {
+    if (searchTerm) {
+      return empty("No hay registros que coincidan con la búsqueda.");
+    } else {
+      const singularNames = {
+        contacts: "contacto",
+        companies: "empresa",
+        deals: "oportunidad",
+        tasks: "tarea",
+        tickets: "ticket",
+        campaigns: "campaña"
+      };
+      const typeNames = {
+        contacts: "contactos",
+        companies: "empresas",
+        deals: "oportunidades",
+        tasks: "tareas",
+        tickets: "tickets",
+        campaigns: "campañas"
+      };
+
+      const namePlural = typeNames[type] || "actividad o registros";
+      const nameSingular = singularNames[type] || "registro";
+
+      if (type) {
+        return `
+          <div class="empty-state">
+            <p>Aún no tienes ${namePlural}.</p>
+            <button class="primary-button compact" type="button" data-open-create="${type}">+ Crear ${nameSingular}</button>
+          </div>
+        `;
+      } else {
+        return `
+          <div class="empty-state">
+            <p>Aún no tienes ${namePlural}.</p>
+            <button class="primary-button compact" type="button" data-open-create="contacts">+ Crear contacto</button>
+          </div>
+        `;
+      }
+    }
+  }
 
   return `
     <table>
@@ -1299,14 +1394,14 @@ function renderModule(type) {
           <button class="primary-button" type="button" data-open-create="${type}">+ Crear</button>
         </div>
       </div>
-      <div class="table-wrap">${tableMarkup(records)}</div>
+      <div class="table-wrap">${tableMarkup(records, type)}</div>
     </section>
   `;
 }
 
 function renderReports() {
   const deals = state.records.deals;
-  const total = deals.reduce((sum, deal) => sum + Number(deal.value || 0), 0) || 1;
+  const total = deals.reduce((sum, deal) => sum + Number(deal.value || 0), 0);
   const byStatus = statusByType.deals.map((status) => ({
     status,
     value: deals.filter((deal) => deal.status === status).reduce((sum, deal) => sum + Number(deal.value || 0), 0)
@@ -1315,14 +1410,14 @@ function renderReports() {
   viewRoot.innerHTML = `
     <div class="metric-grid">
       ${metric("Ingresos potenciales", money(total), "Pipeline")}
-      ${metric("Ticket promedio", money(total / Math.max(deals.length, 1)), "Ventas")}
-      ${metric("Conversion cerrada", `${Math.round((deals.filter((deal) => deal.status === "Cerrado").length / Math.max(deals.length, 1)) * 100)}%`, "CRM")}
+      ${metric("Ticket promedio", money(deals.length ? total / deals.length : 0), "Ventas")}
+      ${metric("Conversión cerrada", `${deals.length ? Math.round((deals.filter((deal) => deal.status === "Cerrado").length / deals.length) * 100) : 0}%`, "CRM")}
       ${metric("Campañas activas", state.records.campaigns.filter((campaign) => campaign.status === "Activa").length, "Marketing")}
     </div>
     <section class="panel">
       <div class="panel-header">
         <div>
-          <p class="eyebrow">Analitica</p>
+          <p class="eyebrow">Analítica</p>
           <h2>Valor por etapa de ventas</h2>
         </div>
       </div>
@@ -1332,7 +1427,7 @@ function renderReports() {
             (row) => `
               <div class="bar-row">
                 <span>${row.status}</span>
-                <div class="bar-track"><div class="bar-fill" style="width: ${Math.max((row.value / total) * 100, row.value ? 8 : 0)}%"></div></div>
+                <div class="bar-track"><div class="bar-fill" style="width: ${total ? Math.max((row.value / total) * 100, row.value ? 8 : 0) : 0}%"></div></div>
                 <strong>${money(row.value)}</strong>
               </div>
             `
@@ -1348,7 +1443,7 @@ function renderSettings() {
     <section class="panel settings-panel">
       <div class="panel-header">
         <div>
-          <p class="eyebrow">Configuracion</p>
+          <p class="eyebrow">Configuración</p>
           <h2>Visibilidad de la app</h2>
         </div>
       </div>
@@ -1365,7 +1460,7 @@ function renderSettings() {
 
         <article class="settings-block">
           <div>
-            <p class="eyebrow">Mensajeria</p>
+            <p class="eyebrow">Mensajería</p>
             <h3>Canales visibles</h3>
           </div>
           <div class="toggle-list">
@@ -1421,6 +1516,7 @@ function renderManager() {
   const activeTeams = activeManagerTab === "teams" ? "active" : "";
   const activeSchedule = activeManagerTab === "schedule" ? "active" : "";
   const activeFlows = activeManagerTab === "flows" ? "active" : "";
+  const activeBot = activeManagerTab === "bot" ? "active" : "";
 
   // Dynamic KPI calculations
   const totalConvs = state.conversations.length || 1;
@@ -1628,7 +1724,7 @@ function renderManager() {
           </div>
 
           <div class="form-actions border-top">
-            <button class="primary-button" type="submit">Guardar configuracion global</button>
+            <button class="primary-button" type="submit">Guardar configuración global</button>
           </div>
         </form>
       </div>
@@ -1693,7 +1789,7 @@ function renderManager() {
             <div class="panel-header">
               <div>
                 <p class="eyebrow">Nueva regla</p>
-                <h2>Crear automatizacion</h2>
+                <h2>Crear automatización</h2>
               </div>
             </div>
             <form id="createAutomationForm" class="manager-form-layout compact">
@@ -1709,7 +1805,7 @@ function renderManager() {
                 Accion (Action)
                 <input type="text" name="action" placeholder="Ej. Enviar plantilla alerta" required />
               </label>
-              <button class="primary-button full-width" type="submit">Crear automatizacion</button>
+              <button class="primary-button full-width" type="submit">Crear automatización</button>
             </form>
           </section>
 
@@ -1742,6 +1838,142 @@ function renderManager() {
         </div>
       </div>
     `;
+  } else if (activeManagerTab === "bot") {
+    const settings = state.managerSettings || {
+      botEnabled: true,
+      botProvider: "openai",
+      botModel: "gpt-4o",
+      botApiKey: "",
+      botInstructions: "Eres un asistente de atención al cliente útil y educado para Alvis CRM.",
+      botResolutionTimeout: 30,
+      botTransferHumanKeywords: "humano, agente, asesor, persona",
+      botAutoLabel: true,
+      botAutoPriority: true
+    };
+    
+    tabContent = `
+      <div class="panel manager-settings-panel">
+        <form id="botSettingsForm" class="manager-form-layout">
+          <div class="manager-form-section">
+            <div class="section-title">
+              <span class="icon">🤖</span>
+              <div>
+                <h3>Bot de Inteligencia Artificial</h3>
+                <small>Configura el comportamiento del bot automático que atiende los chats entrantes.</small>
+              </div>
+            </div>
+            
+            <div style="margin: 15px 0;">
+              <label class="day-checkbox-label" style="display: flex; align-items: center; gap: 8px; font-weight: bold; cursor: pointer;">
+                <input type="checkbox" name="botEnabled" value="true" ${settings.botEnabled ? "checked" : ""} />
+                <span>Activar bot de IA para todas las conversaciones entrantes</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="manager-form-section border-top">
+            <div class="section-title">
+              <span class="icon">⚙️</span>
+              <div>
+                <h3>Proveedor e Integración de IA</h3>
+                <small>Selecciona tu proveedor de inteligencia artificial, modelo y credenciales de acceso.</small>
+              </div>
+            </div>
+
+            <div class="form-group row-group">
+              <label>
+                Proveedor de IA
+                <select name="botProvider" required>
+                  <option value="openai" ${settings.botProvider === 'openai' ? 'selected' : ''}>OpenAI (ChatGPT)</option>
+                  <option value="anthropic" ${settings.botProvider === 'anthropic' ? 'selected' : ''}>Anthropic (Claude)</option>
+                  <option value="gemini" ${settings.botProvider === 'gemini' ? 'selected' : ''}>Google Gemini</option>
+                  <option value="ollama" ${settings.botProvider === 'ollama' ? 'selected' : ''}>Ollama (Local / Autohospedado)</option>
+                </select>
+              </label>
+              
+              <label>
+                Modelo de IA
+                <input type="text" name="botModel" value="${escapeHtml(settings.botModel || 'gpt-4o')}" placeholder="Ej. gpt-4o, claude-3-5-sonnet, gemini-1.5-flash, llama3" required />
+              </label>
+            </div>
+
+            <div class="form-group">
+              <label>
+                Clave API (API Key) o Host URL (para Ollama)
+                <input type="password" name="botApiKey" value="${escapeHtml(settings.botApiKey || '')}" placeholder="Ingresa la API Key de tu proveedor. Si se deja en blanco, usará el modo simulado/demostración." />
+              </label>
+              <small style="color: var(--muted); margin-top: 4px; display: block;">
+                Para Ollama, introduce la URL del host (ej: <code>http://localhost:11434</code>). Si usas OpenAI/Anthropic/Gemini sin clave API, el sistema responderá en modo simulado para pruebas libres.
+              </small>
+            </div>
+          </div>
+
+          <div class="manager-form-section border-top">
+            <div class="section-title">
+              <span class="icon">📝</span>
+              <div>
+                <h3>Instrucciones del Bot (Prompt de Sistema)</h3>
+                <small>Define el rol del bot, tono de voz, restricciones y conocimiento de tu empresa.</small>
+              </div>
+            </div>
+            <div class="form-group">
+              <textarea name="botInstructions" rows="6" style="width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--panel); color: var(--text);" placeholder="Ej. Eres un bot de soporte técnico para Alvis CRM. Responde en tono formal y ayuda al usuario a..." required>${escapeHtml(settings.botInstructions || '')}</textarea>
+            </div>
+          </div>
+
+          <div class="manager-form-section border-top">
+            <div class="section-title">
+              <span class="icon">🔄</span>
+              <div>
+                <h3>Acciones del Bot e Interacciones</h3>
+                <small>Configura reglas automáticas de clasificación y escape para transferir a agentes humanos.</small>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>
+                Palabras clave de escape (Transferencia a Humano)
+                <input type="text" name="botTransferHumanKeywords" value="${escapeHtml(settings.botTransferHumanKeywords || 'humano, agente, asesor, persona')}" placeholder="Ej. humano, hablar con alguien, agente, soporte humano" required />
+              </label>
+              <small style="color: var(--muted); margin-top: 4px; display: block;">
+                Si el cliente escribe un mensaje que contenga alguna de estas palabras (separadas por comas), el bot se apagará automáticamente para ese chat y avisará al agente.
+              </small>
+            </div>
+
+            <div class="days-checkbox-grid" style="margin-top: 15px;">
+              <label class="day-checkbox-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" name="botAutoLabel" value="true" ${settings.botAutoLabel !== false ? "checked" : ""} />
+                <span>Autoclasificar conversaciones con etiquetas inteligentes</span>
+              </label>
+              <label class="day-checkbox-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" name="botAutoPriority" value="true" ${settings.botAutoPriority !== false ? "checked" : ""} />
+                <span>Modificar prioridad de chat automáticamente por urgencia</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="manager-form-section border-top">
+            <div class="section-title">
+              <span class="icon">⏱</span>
+              <div>
+                <h3>Auto-Resolución de Conversaciones</h3>
+                <small>Define el tiempo de inactividad antes de que la conversación se cierre automáticamente.</small>
+              </div>
+            </div>
+            <div class="form-group" style="max-width: 250px;">
+              <label>
+                Tiempo de resolución (Minutos)
+                <input type="number" name="botResolutionTimeout" value="${settings.botResolutionTimeout || 30}" min="1" max="1440" required />
+              </label>
+            </div>
+          </div>
+
+          <div class="form-actions border-top">
+            <button class="primary-button" type="submit">Guardar configuración del bot</button>
+          </div>
+        </form>
+      </div>
+    `;
   }
 
   viewRoot.innerHTML = `
@@ -1750,7 +1982,8 @@ function renderManager() {
         <button class="manager-tab-btn ${activeKPIs}" data-manager-tab="kpis">📈 Monitoreo y KPIs</button>
         <button class="manager-tab-btn ${activeTeams}" data-manager-tab="teams">👥 Equipos y Enrutamiento</button>
         <button class="manager-tab-btn ${activeSchedule}" data-manager-tab="schedule">⏰ Horario y SLAs</button>
-        <button class="manager-tab-btn ${activeFlows}" data-manager-tab="flows">⚡ Canales y Automatizacion</button>
+        <button class="manager-tab-btn ${activeFlows}" data-manager-tab="flows">⚡ Canales y Automatización</button>
+        <button class="manager-tab-btn ${activeBot}" data-manager-tab="bot">🤖 Bot de IA</button>
       </div>
       <div class="manager-tab-content">
         ${tabContent}
@@ -1800,7 +2033,40 @@ function attachManagerEventListeners() {
         slaLimits: { Alta: Number(slaAlta), Media: Number(slaMedia), Baja: Number(slaBaja) },
         agentCapacity: Number(agentCapacity)
       }).then(() => {
-        alert("Configuracion del supervisor guardada correctamente.");
+        alert("Configuración del supervisor guardada correctamente.");
+        render();
+      }).catch(err => alert(err.message));
+    });
+  }
+
+  // Bot Settings form submission
+  const botSettingsForm = viewRoot.querySelector("#botSettingsForm");
+  if (botSettingsForm) {
+    botSettingsForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const formData = new FormData(botSettingsForm);
+      const botEnabled = botSettingsForm.querySelector('[name="botEnabled"]').checked;
+      const botProvider = formData.get("botProvider");
+      const botModel = formData.get("botModel");
+      const botApiKey = formData.get("botApiKey");
+      const botInstructions = formData.get("botInstructions");
+      const botResolutionTimeout = formData.get("botResolutionTimeout");
+      const botTransferHumanKeywords = formData.get("botTransferHumanKeywords");
+      const botAutoLabel = botSettingsForm.querySelector('[name="botAutoLabel"]').checked;
+      const botAutoPriority = botSettingsForm.querySelector('[name="botAutoPriority"]').checked;
+
+      updateManagerSettings({
+        botEnabled,
+        botProvider,
+        botModel,
+        botApiKey,
+        botInstructions,
+        botResolutionTimeout: Number(botResolutionTimeout),
+        botTransferHumanKeywords,
+        botAutoLabel,
+        botAutoPriority
+      }).then(() => {
+        alert("Configuración del bot de IA guardada correctamente.");
         render();
       }).catch(err => alert(err.message));
     });
@@ -1871,7 +2137,7 @@ function attachManagerEventListeners() {
       };
 
       createAutomationOnServer(newFlow).then(() => {
-        alert("Flujo de automatizacion creado y activado.");
+        alert("Flujo de automatización creado y activado.");
         createAutoForm.reset();
         renderManager();
       }).catch(err => alert(err.message));
@@ -1991,11 +2257,20 @@ function channelNameFromId(id) {
   }[id] || id;
 }
 
-function openCreateModal(type = state.activeView) {
+function openCreateModal(type = state.activeView, isGlobal = false) {
   const safeType = statusByType[type] ? type : "contacts";
   recordType.value = safeType;
   updateStatusOptions();
-  document.querySelector("#modalTitle").textContent = `Nuevo ${labelSingular(safeType)}`;
+
+  const container = document.querySelector("#recordTypeContainer");
+  if (isGlobal) {
+    if (container) container.style.display = "block";
+    document.querySelector("#modalTitle").textContent = "Nuevo registro";
+  } else {
+    if (container) container.style.display = "none";
+    document.querySelector("#modalTitle").textContent = `Nuevo ${labelSingular(safeType)}`;
+  }
+
   recordForm.reset();
   recordType.value = safeType;
   updateStatusOptions();
@@ -2022,6 +2297,7 @@ function openChannelConfigModal(channelId) {
 
   let html = "";
   if (channel.id === "whatsapp") {
+    const waCallbackUrl = `${state.publicUrl || location.origin}/api/webhooks/whatsapp`;
     html = `
       <label class="full-field">
         Phone Number ID (Meta Developer)
@@ -2039,8 +2315,15 @@ function openChannelConfigModal(channelId) {
         Webhook Verification Token (Opcional)
         <input type="text" name="verifyToken" value="${escapeHtml(config.verifyToken)}" placeholder="alvis-crm-verify-token-123" />
       </label>
+      <div class="full-field" style="margin-top:12px;padding:12px 14px;background:var(--panel-soft);border-radius:8px;border:1px solid var(--line);">
+        <p style="font-weight:700;font-size:0.8rem;color:var(--muted);margin:0 0 4px;">📡 URL de Callback del Webhook</p>
+        <p style="font-size:0.75rem;color:var(--muted);margin:0 0 8px;">Pega esta URL en la configuración de tu app de Meta Developers → Webhooks.</p>
+        <input type="text" readonly value="${escapeHtml(waCallbackUrl)}" onclick="this.select()" style="font-family:monospace;font-size:0.8rem;background:var(--bg);color:var(--text);padding:7px 10px;border:1px solid var(--accent);border-radius:6px;width:100%;cursor:text;" />
+        <p style="font-size:0.72rem;color:var(--muted);margin:6px 0 0;">⚙️ Configura el dominio en la variable <code>PUBLIC_URL</code> de tu archivo <code>.env</code>.</p>
+      </div>
     `;
   } else if (channel.id === "instagram" || channel.id === "messenger") {
+    const metaCallbackUrl = `${state.publicUrl || location.origin}/api/webhooks/${channel.id}`;
     html = `
       <label class="full-field">
         Facebook Page ID
@@ -2054,6 +2337,12 @@ function openChannelConfigModal(channelId) {
         App Secret Key (Opcional)
         <input type="password" name="appSecret" value="${escapeHtml(config.appSecret)}" placeholder="3f8a..." />
       </label>
+      <div class="full-field" style="margin-top:12px;padding:12px 14px;background:var(--panel-soft);border-radius:8px;border:1px solid var(--line);">
+        <p style="font-weight:700;font-size:0.8rem;color:var(--muted);margin:0 0 4px;">📡 URL de Callback del Webhook</p>
+        <p style="font-size:0.75rem;color:var(--muted);margin:0 0 8px;">Pega esta URL en la configuración de tu app de Meta Developers → Webhooks.</p>
+        <input type="text" readonly value="${escapeHtml(metaCallbackUrl)}" onclick="this.select()" style="font-family:monospace;font-size:0.8rem;background:var(--bg);color:var(--text);padding:7px 10px;border:1px solid var(--accent);border-radius:6px;width:100%;cursor:text;" />
+        <p style="font-size:0.72rem;color:var(--muted);margin:6px 0 0;">⚙️ Configura el dominio en la variable <code>PUBLIC_URL</code> de tu archivo <code>.env</code>.</p>
+      </div>
     `;
   } else if (channel.id === "email") {
     html = `
@@ -2101,6 +2390,7 @@ function openChannelConfigModal(channelId) {
     const titleVal = config.widgetTitle || 'Chatea con Alvis';
     const colorVal = config.widgetColor || '#0f7b6c';
     const welcomeVal = config.welcomeMessage || '¡Hola! ¿En qué te podemos ayudar hoy?';
+    const widgetOrigin = state.publicUrl || location.origin || 'http://localhost:5173';
 
     const scriptCode = `<!-- Alvis CRM Web Chat Widget -->
 <script>
@@ -2108,7 +2398,7 @@ function openChannelConfigModal(channelId) {
     w['AlvisWidget']=o;w[o]=w[o]||function(){(w[o].q=w[o].q||[]).push(arguments)};
     js=d.createElement(s),fjs=d.getElementsByTagName(s)[0];js.id='alvis-widget-script';
     js.src=f;js.async=1;fjs.parentNode.insertBefore(js,fjs);
-  }(window,document,'script','alvisChat','${location.origin || 'http://127.0.0.1:5174'}/widget.js'));
+  }(window,document,'script','alvisChat','${widgetOrigin}/widget.js'));
   
   alvisChat('init', {
     title: '${escapeJsString(titleVal)}',
@@ -2181,13 +2471,14 @@ function openChannelConfigModal(channelId) {
       const color = colorInput.value || '#0f7b6c';
       const welcome = welcomeInput.value || '';
 
+      const runtimeOrigin = state.publicUrl || location.origin || 'http://localhost:5173';
       const updatedScript = `<!-- Alvis CRM Web Chat Widget -->
 <script>
   (function(w,d,s,o,f,js,fjs) {
     w['AlvisWidget']=o;w[o]=w[o]||function(){(w[o].q=w[o].q||[]).push(arguments)};
     js=d.createElement(s),fjs=d.getElementsByTagName(s)[0];js.id='alvis-widget-script';
     js.src=f;js.async=1;fjs.parentNode.insertBefore(js,fjs);
-  }(window,document,'script','alvisChat','${location.origin || 'http://127.0.0.1:5174'}/widget.js'));
+  }(window,document,'script','alvisChat','${runtimeOrigin}/widget.js'));
   
   alvisChat('init', {
     title: '${escapeJsString(title)}',
@@ -2242,7 +2533,7 @@ async function updateChannelConfig(channelId, config) {
     }
     saveState();
   } catch (error) {
-    console.error("No se pudo guardar la configuracion del canal:", error);
+    console.error("No se pudo guardar la configuración del canal:", error);
   }
   return channel;
 }
@@ -2335,6 +2626,37 @@ async function toggleResolved(conversationId) {
   }
 }
 
+async function toggleResponder(conversationId) {
+  const conversation = state.conversations.find((item) => item.id === conversationId);
+  if (!conversation) return;
+
+  const nextResponder = conversation.responder === "human" ? "bot" : "human";
+  try {
+    const payload = await updateConversation(conversationId, { responder: nextResponder });
+    replaceConversation(payload.conversation);
+    selectedConversationId = conversationId;
+    saveState();
+    render();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function simulateIncomingMessage(conversationId) {
+  const text = prompt("Introduce el mensaje que simulará enviar el cliente:");
+  if (!text || !text.trim()) return;
+
+  try {
+    const payload = await createConversationMessage(conversationId, text.trim(), "incoming");
+    replaceConversation(payload.conversation);
+    selectedConversationId = conversationId;
+    saveState();
+    render();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
 function insertNewline(textarea) {
   const start = textarea.selectionStart;
   const end = textarea.selectionEnd;
@@ -2347,6 +2669,8 @@ function insertNewline(textarea) {
 const logoutButton = document.querySelector("#logoutButton");
 if (logoutButton) {
   logoutButton.addEventListener("click", () => {
+    const shell = document.querySelector('.app-shell');
+    shell?.classList.remove('nav-open');
     sessionStorage.removeItem("alvis-session");
     localStorage.removeItem("alvis-session");
     window.location.reload();
@@ -2373,6 +2697,17 @@ viewRoot.addEventListener("click", (event) => {
   const resolveButton = event.target.closest("[data-toggle-resolved]");
   const compTabButton = event.target.closest("[data-composer-tab]");
   const configureChannelButton = event.target.closest("[data-configure-channel]");
+  const responderToggleButton = event.target.closest("[data-toggle-responder]");
+  const simulateIncomingButton = event.target.closest("[data-simulate-incoming]");
+
+  if (responderToggleButton) {
+    toggleResponder(responderToggleButton.dataset.toggleResponder);
+    return;
+  }
+  if (simulateIncomingButton) {
+    simulateIncomingMessage(simulateIncomingButton.dataset.simulateIncoming);
+    return;
+  }
 
   if (configureChannelButton) {
     const channelId = configureChannelButton.dataset.configureChannel;
@@ -2502,22 +2837,42 @@ viewRoot.addEventListener("keydown", (event) => {
   }
 });
 
-quickAddButton.addEventListener("click", () => openCreateModal());
+quickAddButton.addEventListener("click", () => openCreateModal(state.activeView, true));
 recordType.addEventListener("change", updateStatusOptions);
 
-sidebarToggle.addEventListener("click", () => {
-  state.preferences.layout.showSidebar = !state.preferences.layout.showSidebar;
-  saveState();
-  render();
-});
+const shell = document.querySelector('.app-shell');
 
-if (sidebarTogglePersistent) {
-  sidebarTogglePersistent.addEventListener("click", () => {
+function handleSidebarToggle() {
+  if (window.innerWidth <= 768) {
+    shell?.classList.toggle('nav-open');
+  } else {
     state.preferences.layout.showSidebar = !state.preferences.layout.showSidebar;
     saveState();
     render();
-  });
+  }
 }
+
+sidebarToggle?.addEventListener("click", handleSidebarToggle);
+
+if (sidebarTogglePersistent) {
+  sidebarTogglePersistent.addEventListener("click", handleSidebarToggle);
+}
+
+// Cerrar cajón al hacer clic fuera del sidebar en móviles
+shell?.addEventListener('click', (e) => {
+  if (shell.classList.contains('nav-open')) {
+    if (e.target.closest('.nav-button') || e.target.closest('#logoutButton')) {
+      shell.classList.remove('nav-open');
+      return;
+    }
+    if (!e.target.closest('.sidebar') &&
+        !e.target.closest('#sidebarToggle') &&
+        !e.target.closest('#sidebarTogglePersistent') &&
+        !e.target.closest('.sidebar-toggle-persistent')) {
+      shell.classList.remove('nav-open');
+    }
+  }
+});
 
 themeToggle.addEventListener("click", () => {
   state.theme = state.theme === "dark" ? "light" : "dark";
@@ -2713,6 +3068,40 @@ if (setupForm) {
       }
     } catch (error) {
       alert(error.message);
+    }
+  });
+}
+
+const devBypassBtn = document.querySelector("#devBypassBtn");
+if (devBypassBtn) {
+  devBypassBtn.addEventListener("click", async () => {
+    try {
+      const authRes = await fetch("/api/auth/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential: "bypass", bypass: true })
+      });
+      
+      if (!authRes.ok) {
+        const errorData = await authRes.json();
+        throw new Error(errorData.error || "Fallo el inicio de sesión");
+      }
+      
+      const data = await authRes.json();
+      if (data.success && data.agent) {
+        sessionStorage.setItem("alvis-session", "active");
+        if (loginWrapper) loginWrapper.style.display = "none";
+        if (appShell) appShell.style.display = "grid";
+        if (loginError) loginError.style.display = "none";
+        
+        render();
+        bootstrapFromApi();
+      }
+    } catch (error) {
+      if (loginError) {
+        loginError.textContent = error.message;
+        loginError.style.display = "flex";
+      }
     }
   });
 }
