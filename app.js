@@ -447,14 +447,25 @@ function filteredRecords(type) {
   });
 }
 
-function renderNav() {
-  navList.innerHTML = modules
+function getOrderedModules() {
+  const order = state.preferences.enabledModules;
+  return modules
     .filter((item) => isModuleEnabled(item.id))
+    .sort((a, b) => {
+      const ai = order.indexOf(a.id);
+      const bi = order.indexOf(b.id);
+      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    });
+}
+
+function renderNav() {
+  const ordered = getOrderedModules();
+  navList.innerHTML = ordered
     .map((item) => {
       const count = state.records[item.id]?.length ?? state[item.id]?.length ?? "";
       const active = state.activeView === item.id ? "active" : "";
       return `
-        <button class="nav-button ${active}" type="button" data-view="${item.id}" title="${item.label}">
+        <button class="nav-button ${active}" type="button" data-view="${item.id}" title="${item.label}" draggable="true" data-drag-id="${item.id}">
           <span class="nav-icon">${item.icon}</span>
           <span class="nav-label">${item.label}</span>
           ${state.preferences.layout.showNavCounts ? `<span class="nav-count">${count}</span>` : ""}
@@ -462,6 +473,68 @@ function renderNav() {
       `;
     })
     .join("");
+
+  attachNavDragHandlers();
+}
+
+let draggedNavId = null;
+
+function attachNavDragHandlers() {
+  const buttons = navList.querySelectorAll(".nav-button[draggable]");
+  buttons.forEach((btn) => {
+    btn.addEventListener("dragstart", (e) => {
+      draggedNavId = btn.dataset.dragId;
+      btn.classList.add("nav-dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", draggedNavId);
+    });
+
+    btn.addEventListener("dragend", () => {
+      draggedNavId = null;
+      btn.classList.remove("nav-dragging");
+      navList.querySelectorAll(".nav-button").forEach((b) => {
+        b.classList.remove("nav-drop-above", "nav-drop-below");
+      });
+    });
+
+    btn.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      if (btn.dataset.dragId === draggedNavId) return;
+
+      const rect = btn.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      btn.classList.toggle("nav-drop-above", e.clientY < midY);
+      btn.classList.toggle("nav-drop-below", e.clientY >= midY);
+    });
+
+    btn.addEventListener("dragleave", () => {
+      btn.classList.remove("nav-drop-above", "nav-drop-below");
+    });
+
+    btn.addEventListener("drop", (e) => {
+      e.preventDefault();
+      btn.classList.remove("nav-drop-above", "nav-drop-below");
+      const targetId = btn.dataset.dragId;
+      if (!draggedNavId || draggedNavId === targetId) return;
+
+      const order = [...state.preferences.enabledModules];
+      const fromIdx = order.indexOf(draggedNavId);
+      let toIdx = order.indexOf(targetId);
+      if (fromIdx === -1 || toIdx === -1) return;
+
+      order.splice(fromIdx, 1);
+      toIdx = order.indexOf(targetId);
+
+      const rect = btn.getBoundingClientRect();
+      const insertAfter = e.clientY >= rect.top + rect.height / 2;
+      order.splice(insertAfter ? toIdx + 1 : toIdx, 0, draggedNavId);
+
+      state.preferences.enabledModules = order;
+      saveState();
+      renderNav();
+    });
+  });
 }
 
 function render() {
@@ -940,7 +1013,7 @@ function renderTeams() {
         ${state.teams
           .map(
             (team) => `
-              <article class="record-card channel-card">
+              <article class="record-card channel-card detail-expandable" data-detail-team="${team.id}" style="cursor:pointer">
                 <div class="conversation-topline">
                   <strong>${escapeHtml(team.name)}</strong>
                   <span class="badge warning">${team.open} abiertas</span>
@@ -953,6 +1026,19 @@ function renderTeams() {
                   <div><dt>Primera respuesta</dt><dd>${escapeHtml(team.firstResponse)}</dd></div>
                   <div><dt>Resolucion</dt><dd>${escapeHtml(team.resolution)}</dd></div>
                 </dl>
+                <div class="detail-expand-panel" style="display:none">
+                  <hr style="border:0;border-top:1px solid var(--border,rgba(0,0,0,.08));margin:12px 0"/>
+                  <dl class="detail-list detail-list-full">
+                    <div><dt>ID del equipo</dt><dd style="font-family:monospace;font-size:.75rem">${escapeHtml(team.id)}</dd></div>
+                    <div><dt>Nombre</dt><dd>${escapeHtml(team.name)}</dd></div>
+                    <div><dt>Agentes activos</dt><dd>${team.agents}</dd></div>
+                    <div><dt>Conversaciones abiertas</dt><dd>${team.open}</dd></div>
+                    <div><dt>Método de enrutamiento</dt><dd>${escapeHtml(team.routing)}</dd></div>
+                    <div><dt>Primera respuesta (promedio)</dt><dd>${escapeHtml(team.firstResponse)}</dd></div>
+                    <div><dt>Tiempo de resolución (promedio)</dt><dd>${escapeHtml(team.resolution)}</dd></div>
+                    <div><dt>Capacidad máxima</dt><dd>${team.agents * (state.managerSettings?.agentCapacity || 5)} chats simultáneos</dd></div>
+                  </dl>
+                </div>
               </article>
             `
           )
@@ -960,6 +1046,20 @@ function renderTeams() {
       </div>
     </section>
   `;
+
+  viewRoot.querySelectorAll("[data-detail-team]").forEach((card) => {
+    card.addEventListener("click", (e) => {
+      if (e.target.closest("a, button, input, select, textarea")) return;
+      const panel = card.querySelector(".detail-expand-panel");
+      const isOpen = panel.style.display !== "none";
+      viewRoot.querySelectorAll(".detail-expand-panel").forEach((p) => (p.style.display = "none"));
+      viewRoot.querySelectorAll(".detail-expandable").forEach((c) => c.classList.remove("detail-open"));
+      if (!isOpen) {
+        panel.style.display = "block";
+        card.classList.add("detail-open");
+      }
+    });
+  });
 }
 
 function renderMacros() {
@@ -975,13 +1075,25 @@ function renderMacros() {
         ${state.macros
           .map(
             (macro) => `
-              <article class="record-card channel-card">
+              <article class="record-card channel-card detail-expandable" data-detail-macro="${macro.id}" style="cursor:pointer">
                 <div class="conversation-topline">
                   <strong>${escapeHtml(macro.name)}</strong>
                   <span class="badge">${escapeHtml(macro.visibility)}</span>
                 </div>
                 <div class="macro-actions">
                   ${macro.actions.map((action) => `<span>${escapeHtml(action)}</span>`).join("")}
+                </div>
+                <div class="detail-expand-panel" style="display:none">
+                  <hr style="border:0;border-top:1px solid var(--border,rgba(0,0,0,.08));margin:12px 0"/>
+                  <dl class="detail-list detail-list-full">
+                    <div><dt>ID de la macro</dt><dd style="font-family:monospace;font-size:.75rem">${escapeHtml(macro.id)}</dd></div>
+                    <div><dt>Nombre</dt><dd>${escapeHtml(macro.name)}</dd></div>
+                    <div><dt>Visibilidad</dt><dd>${escapeHtml(macro.visibility)}</dd></div>
+                    <div><dt>Acciones (${macro.actions.length})</dt><dd></dd></div>
+                  </dl>
+                  <ol class="detail-action-list">
+                    ${macro.actions.map((action) => `<li>${escapeHtml(action)}</li>`).join("")}
+                  </ol>
                 </div>
               </article>
             `
@@ -990,6 +1102,20 @@ function renderMacros() {
       </div>
     </section>
   `;
+
+  viewRoot.querySelectorAll("[data-detail-macro]").forEach((card) => {
+    card.addEventListener("click", (e) => {
+      if (e.target.closest("a, button, input, select, textarea")) return;
+      const panel = card.querySelector(".detail-expand-panel");
+      const isOpen = panel.style.display !== "none";
+      viewRoot.querySelectorAll(".detail-expand-panel").forEach((p) => (p.style.display = "none"));
+      viewRoot.querySelectorAll(".detail-expandable").forEach((c) => c.classList.remove("detail-open"));
+      if (!isOpen) {
+        panel.style.display = "block";
+        card.classList.add("detail-open");
+      }
+    });
+  });
 }
 
 function metric(label, value, change) {
@@ -2217,14 +2343,17 @@ function insertNewline(textarea) {
   textarea.selectionEnd = start + 1;
 }
 
-navList.addEventListener("click", (event) => {
-  const logoutBtn = event.target.closest("#logoutButton");
-  if (logoutBtn) {
+// Logout button is outside navList, needs its own handler
+const logoutButton = document.querySelector("#logoutButton");
+if (logoutButton) {
+  logoutButton.addEventListener("click", () => {
     sessionStorage.removeItem("alvis-session");
     localStorage.removeItem("alvis-session");
     window.location.reload();
-    return;
-  }
+  });
+}
+
+navList.addEventListener("click", (event) => {
 
   const button = event.target.closest("[data-view]");
   if (!button) return;
@@ -2453,54 +2582,141 @@ if (channelConfigForm && channelConfigDialog) {
   });
 }
 
-// --- Controlador de Inicio de Sesión Premium (Login Controller) ---
-const loginForm = document.querySelector("#loginForm");
+// --- Google Sign-In & Setup Wizard Implementation ---
 const loginWrapper = document.querySelector("#loginWrapper");
+const setupWizard = document.querySelector("#setupWizard");
+const setupForm = document.querySelector("#setupForm");
 const loginError = document.querySelector("#loginError");
 const appShell = document.querySelector("#appShell");
+
+let googleClientIdGlobal = "";
 
 function checkSession() {
   const session = sessionStorage.getItem("alvis-session") || localStorage.getItem("alvis-session");
   if (session === "active") {
     if (loginWrapper) loginWrapper.style.display = "none";
-    if (appShell) {
-      appShell.style.display = "grid";
-      // Asegurarse de quitar cualquier estilo inline restrictivo
-      appShell.style.removeProperty("display");
-    }
+    if (setupWizard) setupWizard.style.display = "none";
+    if (appShell) appShell.style.display = "grid";
     return true;
   } else {
-    if (loginWrapper) loginWrapper.style.display = "flex";
     if (appShell) appShell.style.display = "none";
+    checkGoogleSetup();
     return false;
   }
 }
 
-if (loginForm) {
-  loginForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const email = document.querySelector("#loginEmail").value.trim();
-    const password = document.querySelector("#loginPassword").value;
+async function checkGoogleSetup() {
+  try {
+    const response = await fetch("/api/bootstrap", { headers: { Accept: "application/json" } });
+    if (!response.ok) {
+      showLoginScreen("");
+      return;
+    }
+    const data = await response.json();
+    if (data.googleClientId) {
+      googleClientIdGlobal = data.googleClientId;
+      showLoginScreen(data.googleClientId);
+    } else {
+      showSetupScreen();
+    }
+  } catch (err) {
+    showLoginScreen("");
+  }
+}
 
-    if (email === "admin@alviscrm.com" && password === "admin") {
+function showSetupScreen() {
+  if (setupWizard) setupWizard.style.display = "flex";
+  if (loginWrapper) loginWrapper.style.display = "none";
+}
+
+function showLoginScreen(clientId) {
+  if (setupWizard) setupWizard.style.display = "none";
+  if (loginWrapper) loginWrapper.style.display = "flex";
+  
+  if (clientId) {
+    initGoogleSignIn(clientId);
+  }
+}
+
+function initGoogleSignIn(clientId) {
+  if (typeof google === "undefined" || !google.accounts) {
+    setTimeout(() => initGoogleSignIn(clientId), 500);
+    return;
+  }
+  
+  google.accounts.id.initialize({
+    client_id: clientId,
+    callback: handleCredentialResponse
+  });
+  
+  google.accounts.id.renderButton(
+    document.getElementById("g_id_signin"),
+    { theme: "outline", size: "large", width: 280 }
+  );
+}
+
+async function handleCredentialResponse(response) {
+  const credential = response.credential;
+  try {
+    const authRes = await fetch("/api/auth/google", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ credential })
+    });
+    
+    if (!authRes.ok) {
+      const errorData = await authRes.json();
+      throw new Error(errorData.error || "Fallo el inicio de sesión");
+    }
+    
+    const data = await authRes.json();
+    if (data.success && data.agent) {
       sessionStorage.setItem("alvis-session", "active");
       if (loginWrapper) loginWrapper.style.display = "none";
-      if (appShell) {
-        appShell.style.display = "grid";
-        appShell.style.removeProperty("display");
-      }
+      if (appShell) appShell.style.display = "grid";
       if (loginError) loginError.style.display = "none";
       
-      // Inicializar y renderizar CRM tras login exitoso
       render();
       bootstrapFromApi();
-    } else {
-      if (loginError) loginError.style.display = "flex";
+    }
+  } catch (error) {
+    if (loginError) {
+      loginError.textContent = error.message;
+      loginError.style.display = "flex";
+    }
+  }
+}
+
+if (setupForm) {
+  setupForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const googleClientId = document.querySelector("#setupGoogleClientId").value.trim();
+    const adminEmail = document.querySelector("#setupAdminEmail").value.trim();
+    const adminName = document.querySelector("#setupAdminName").value.trim();
+    
+    try {
+      const setupRes = await fetch("/api/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ googleClientId, adminEmail, adminName })
+      });
+      
+      if (!setupRes.ok) {
+        const err = await setupRes.json();
+        throw new Error(err.error || "Fallo la configuración");
+      }
+      
+      const data = await setupRes.json();
+      if (data.success) {
+        googleClientIdGlobal = data.googleClientId;
+        showLoginScreen(data.googleClientId);
+      }
+    } catch (error) {
+      alert(error.message);
     }
   });
 }
 
-// Inicializar la aplicación dependiendo de la sesión activa
 if (checkSession()) {
   render();
   bootstrapFromApi();

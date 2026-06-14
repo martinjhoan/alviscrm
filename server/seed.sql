@@ -23,12 +23,12 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- 3. Insertar Equipos de Trabajo Iniciales
-INSERT INTO teams (id, name, routing)
+INSERT INTO teams (id, name, routing, agents, open, first_response, resolution)
 VALUES 
-    ('e1111111-1111-1111-1111-111111111111'::uuid, 'Soporte', 'Round-robin'),
-    ('e2222222-2222-2222-2222-222222222222'::uuid, 'Ventas', 'Por prioridad'),
-    ('e3333333-3333-3333-3333-333333333333'::uuid, 'Marketing', 'Carga balanceada'),
-    ('e4444444-4444-4444-4444-444444444444'::uuid, 'Tecnico', 'Round-robin')
+    ('e1111111-1111-1111-1111-111111111111'::uuid, 'Soporte', 'Round-robin', 5, 24, '1m 45s', '2h 30m'),
+    ('e2222222-2222-2222-2222-222222222222'::uuid, 'Ventas', 'Por prioridad', 3, 8, '3m 10s', '6h 20m'),
+    ('e3333333-3333-3333-3333-333333333333'::uuid, 'Marketing', 'Carga balanceada', 2, 5, '4m 05s', '4h 15m'),
+    ('e4444444-4444-4444-4444-444444444444'::uuid, 'Tecnico', 'Round-robin', 4, 6, '7m 40s', '8h 05m')
 ON CONFLICT (id) DO NOTHING;
 
 -- 4. Insertar Agentes Iniciales (Asociados a sus respectivos equipos)

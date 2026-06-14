@@ -324,6 +324,26 @@ button {
   color: #ffffff;
 }
 
+.nav-button[draggable] {
+  cursor: grab;
+}
+
+.nav-button[draggable]:active {
+  cursor: grabbing;
+}
+
+.nav-button.nav-dragging {
+  opacity: 0.35;
+}
+
+.nav-button.nav-drop-above {
+  box-shadow: 0 -2px 0 0 var(--accent, #6366f1);
+}
+
+.nav-button.nav-drop-below {
+  box-shadow: 0 2px 0 0 var(--accent, #6366f1);
+}
+
 .nav-icon {
   width: 28px;
   height: 28px;
@@ -2925,6 +2945,93 @@ body.inbox-mode .sidebar-footer {
   color: var(--muted);
 }
 
+.login-logo-img {
+  width: 140px;
+  height: auto;
+  margin-bottom: 20px;
+  animation: logoPulse 2s infinite ease-in-out;
+}
 
+.brand-mark-img {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  border-radius: 8px;
+}
 
+/* Expandable detail cards */
+.detail-expandable {
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
 
+.detail-expandable:hover {
+  border-color: var(--accent, #6366f1);
+}
+
+.detail-expandable.detail-open {
+  border-color: var(--accent, #6366f1);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
+.detail-expand-panel {
+  animation: detailSlideIn 0.2s ease-out;
+}
+
+@keyframes detailSlideIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.detail-list-full {
+  display: grid;
+  gap: 8px;
+}
+
+.detail-list-full > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.05));
+}
+
+.detail-list-full > div:last-child {
+  border-bottom: none;
+}
+
+.detail-list-full dt {
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--muted, #6b7b8d);
+  white-space: nowrap;
+}
+
+.detail-list-full dd {
+  text-align: right;
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+
+.detail-action-list {
+  margin: 8px 0 0 0;
+  padding-left: 20px;
+  font-size: 0.84rem;
+  display: grid;
+  gap: 6px;
+}
+
+.detail-action-list li {
+  padding: 5px 8px;
+  background: var(--surface, rgba(0, 0, 0, 0.03));
+  border-radius: 6px;
+  list-style-position: inside;
+}
+
+[data-theme="dark"] .detail-list-full > div {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .detail-action-list li {
+  background: rgba(255, 255, 255, 0.05);
+}

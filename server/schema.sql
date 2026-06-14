@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS channels (
     access_token TEXT,
     whatsapp_business_account_id VARCHAR(255),
     verify_token VARCHAR(255), -- Para validación de Webhooks de Meta
+    config JSONB DEFAULT '{}'::jsonb,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -33,6 +34,10 @@ CREATE TABLE IF NOT EXISTS teams (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
     routing VARCHAR(100) DEFAULT 'Round-robin', -- 'Round-robin', 'Por prioridad', 'Carga balanceada'
+    agents INTEGER DEFAULT 0,
+    open INTEGER DEFAULT 0,
+    first_response VARCHAR(50) DEFAULT '',
+    resolution VARCHAR(50) DEFAULT '',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -44,6 +49,7 @@ CREATE TABLE IF NOT EXISTS agents (
     role VARCHAR(50) DEFAULT 'Agente', -- 'Administrador', 'Supervisor', 'Agente'
     team_id UUID REFERENCES teams(id) ON DELETE SET NULL,
     active BOOLEAN DEFAULT TRUE,
+    google_id VARCHAR(255) UNIQUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -72,6 +78,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     sla_limit_minutes INTEGER DEFAULT 60, -- SLA en minutos
     last_message TEXT,
     owner_id UUID REFERENCES agents(id) ON DELETE SET NULL,
+    private_note TEXT,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -167,6 +174,7 @@ CREATE TABLE IF NOT EXISTS manager_settings (
     }'::jsonb,
     agent_capacity INTEGER DEFAULT 5,
     routing_method VARCHAR(100) DEFAULT 'round-robin',
+    google_client_id VARCHAR(255),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -176,3 +184,14 @@ CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_contacts_owner ON contacts(owner_id);
 CREATE INDEX IF NOT EXISTS idx_agents_team ON agents(team_id);
+
+-- 15. Tabla de Campañas (Marketing)
+CREATE TABLE IF NOT EXISTS campaigns (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    status VARCHAR(50) DEFAULT 'Borrador', -- 'Borrador', 'Programada', 'Activa', 'Finalizada'
+    value NUMERIC(12, 2) DEFAULT 0.00,
+    owner_id UUID REFERENCES agents(id) ON DELETE SET NULL,
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);

@@ -4,36 +4,60 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Alvis CRM</title>
+    <link rel="icon" type="image/png" href="alvis-favicon.png" />
     <link rel="stylesheet" href="styles.css" />
+    <!-- Librería oficial de Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
     <!-- Botón persistente para mostrar/ocultar el menú lateral -->
     <button class="sidebar-toggle-persistent" id="sidebarTogglePersistent" type="button" aria-label="Alternar menú lateral" title="Alternar menú lateral"></button>
 
-    <!-- Pantalla de Login Premium -->
-    <div class="login-wrapper" id="loginWrapper">
+    <!-- Asistente de Configuración Inicial (Setup Wizard) -->
+    <div class="login-wrapper" id="setupWizard" style="display: none;">
+      <div class="login-card" style="text-align: left;">
+        <div class="login-header" style="text-align: center;">
+          <img src="alvis-favicon.png" alt="Alvis Automate" class="login-logo-img" />
+          <h2>Configuración de Alvis CRM</h2>
+          <p>Completa la configuración inicial para activar el inicio de sesión con Google</p>
+        </div>
+        <form id="setupForm" class="login-form">
+          <div class="input-group">
+            <label for="setupGoogleClientId">Google Client ID</label>
+            <input type="text" id="setupGoogleClientId" required placeholder="Ej. 10293848-abc.apps.googleusercontent.com" />
+          </div>
+          <div class="input-group">
+            <label for="setupAdminEmail">Correo electrónico del Administrador</label>
+            <input type="email" id="setupAdminEmail" required placeholder="Ej. admin@tuempresa.com" />
+          </div>
+          <div class="input-group">
+            <label for="setupAdminName">Nombre del Administrador</label>
+            <input type="text" id="setupAdminName" required placeholder="Ej. Juan Pérez" />
+          </div>
+          <button type="submit" class="login-button" style="margin-top: 10px;">Guardar y Continuar</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Pantalla de Login Premium Exclusivo de Google -->
+    <div class="login-wrapper" id="loginWrapper" style="display: none;">
       <div class="login-card">
         <div class="login-header">
-          <div class="login-logo">A</div>
-          <h2>Bienvenido a Alvis CRM</h2>
-          <p>Ingresa tus credenciales para acceder al panel omnicanal</p>
+          <img src="alvis-favicon.png" alt="Alvis Automate" class="login-logo-img" />
+          <h2>Iniciar Sesión</h2>
+          <p>Accede de forma segura a Alvis CRM con tu cuenta de Google</p>
         </div>
-        <form id="loginForm" class="login-form">
-          <div class="input-group">
-            <label for="loginEmail">Correo electrónico</label>
-            <input type="email" id="loginEmail" required placeholder="admin@alviscrm.com" />
-          </div>
-          <div class="input-group">
-            <label for="loginPassword">Contraseña</label>
-            <input type="password" id="loginPassword" required placeholder="••••••••" />
-          </div>
-          <div id="loginError" class="login-error" style="display: none;">
-            Credenciales incorrectas. Intenta de nuevo.
-          </div>
-          <button type="submit" class="login-button">Iniciar Sesión</button>
-        </form>
+        
+        <!-- Google Sign-In Official Button Container -->
+        <div id="googleBtnContainer" style="display: flex; justify-content: center; margin: 30px 0 10px 0;">
+          <div id="g_id_signin"></div>
+        </div>
+
+        <div id="loginError" class="login-error" style="display: none;">
+          Tu cuenta de Google no tiene acceso autorizado a este CRM.
+        </div>
         <div class="login-footer">
-          <span>Seguridad gestionada de grado SaaS</span>
+          <span>Seguridad administrada mediante Google Workspace</span>
         </div>
       </div>
     </div>
@@ -41,7 +65,7 @@
     <div class="app-shell" id="appShell" style="display: none;">
       <aside class="sidebar" aria-label="Navegacion principal">
         <div class="brand">
-          <div class="brand-mark">A</div>
+          <img src="alvis-favicon.png" alt="Alvis" class="brand-mark-img" />
           <div>
             <strong>Alvis CRM</strong>
             <span>Operacion comercial</span>
@@ -91,7 +115,7 @@
             <p class="eyebrow">Crear registro</p>
             <h2 id="modalTitle">Nuevo contacto</h2>
           </div>
-          <button class="icon-button" value="cancel" type="submit" aria-label="Cerrar" title="Cerrar">×</button>
+          <button class="icon-button" type="button" aria-label="Cerrar" title="Cerrar" onclick="this.closest('dialog').close('cancel')">×</button>
         </div>
 
         <div class="form-grid">
@@ -133,7 +157,7 @@
         </div>
 
         <div class="modal-actions">
-          <button class="secondary-button" value="cancel" type="submit">Cancelar</button>
+          <button class="secondary-button" type="button" onclick="this.closest('dialog').close('cancel')">Cancelar</button>
           <button class="primary-button" value="default" type="submit">Guardar</button>
         </div>
       </form>
@@ -147,7 +171,7 @@
             <p class="eyebrow">Integración comercial</p>
             <h2 id="channelConfigTitle">Configurar canal</h2>
           </div>
-          <button class="icon-button" value="cancel" type="submit" aria-label="Cerrar" title="Cerrar">×</button>
+          <button class="icon-button" type="button" aria-label="Cerrar" title="Cerrar" onclick="this.closest('dialog').close('cancel')">×</button>
         </div>
 
         <div class="form-grid" id="channelConfigFields">
@@ -155,7 +179,7 @@
         </div>
 
         <div class="modal-actions">
-          <button class="secondary-button" value="cancel" type="submit">Cancelar</button>
+          <button class="secondary-button" type="button" onclick="this.closest('dialog').close('cancel')">Cancelar</button>
           <button class="primary-button" value="default" type="submit">Guardar configuración</button>
         </div>
       </form>
