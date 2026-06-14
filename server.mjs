@@ -63,7 +63,57 @@ async function runMigrations() {
       ALTER TABLE conversations 
       ADD COLUMN IF NOT EXISTS responder VARCHAR(20) DEFAULT 'bot';
     `);
-    console.log("✅ Migraciones de base de datos ejecutadas correctamente.");
+
+    // Auto-seed channels if empty
+    const { rows: channelCountRows } = await pool.query("SELECT COUNT(*) FROM channels");
+    if (Number(channelCountRows[0].count) === 0) {
+      await pool.query(`
+        INSERT INTO channels (id, name, provider, status, capability)
+        VALUES 
+          ('whatsapp', 'WhatsApp Business Cloud API', 'Meta', 'Diseñado', 'Mensajes, plantillas, webhooks, asignacion y SLA'),
+          ('instagram', 'Instagram Messaging API', 'Meta', 'Diseñado', 'DMs, comentarios, handoff a agentes y etiquetado'),
+          ('messenger', 'Messenger Platform', 'Meta', 'Diseñado', 'Conversaciones, respuestas rapidas y automatizaciones'),
+          ('email', 'Email IMAP/SMTP', 'Nativo', 'Planificado', 'Bandeja, respuestas, tracking y secuencias'),
+          ('sms', 'SMS', 'Proveedor externo', 'Planificado', 'Notificaciones, OTP y campañas transaccionales'),
+          ('webchat', 'Web Chat', 'Alvis', 'Planificado', 'Widget embebido, bots y captura de leads')
+        ON CONFLICT (id) DO NOTHING;
+      `);
+      console.log("🌱 Base de datos: Canales por defecto inicializados correctamente.");
+    }
+
+    // Auto-seed teams if empty
+    const { rows: teamCountRows } = await pool.query("SELECT COUNT(*) FROM teams");
+    if (Number(teamCountRows[0].count) === 0) {
+      await pool.query(`
+        INSERT INTO teams (id, name, routing, agents, open, first_response, resolution)
+        VALUES 
+          ('e1111111-1111-1111-1111-111111111111'::uuid, 'Soporte', 'Round-robin', 5, 24, '1m 45s', '2h 30m'),
+          ('e2222222-2222-2222-2222-222222222222'::uuid, 'Ventas', 'Por prioridad', 3, 8, '3m 10s', '6h 20m'),
+          ('e3333333-3333-3333-3333-333333333333'::uuid, 'Marketing', 'Carga balanceada', 2, 5, '4m 05s', '4h 15m'),
+          ('e4444444-4444-4444-4444-444444444444'::uuid, 'Tecnico', 'Round-robin', 4, 6, '7m 40s', '8h 05m')
+        ON CONFLICT (id) DO NOTHING;
+      `);
+      console.log("🌱 Base de datos: Equipos por defecto inicializados correctamente.");
+    }
+
+    // Auto-seed manager_settings if empty
+    const { rows: settingsCountRows } = await pool.query("SELECT COUNT(*) FROM manager_settings");
+    if (Number(settingsCountRows[0].count) === 0) {
+      await pool.query(`
+        INSERT INTO manager_settings (id, business_hours, sla_limits, agent_capacity, routing_method)
+        VALUES (
+          1,
+          '{"activeDays": ["Lunes", "Martes", "Miercoles", "Jueves", "Viernes"], "startHour": "09:00", "endHour": "18:00"}'::jsonb,
+          '{"Alta": 15, "Media": 60, "Baja": 240}'::jsonb,
+          5,
+          'round-robin'
+        )
+        ON CONFLICT (id) DO NOTHING;
+      `);
+      console.log("🌱 Base de datos: Ajustes de supervisor por defecto inicializados correctamente.");
+    }
+    
+    console.log("✅ Migraciones y inicialización de base de datos ejecutadas correctamente.");
   } catch (err) {
     console.error("⚠️ Error ejecutando migraciones:", err.message);
   }
