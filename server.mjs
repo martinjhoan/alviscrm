@@ -119,7 +119,32 @@ async function runMigrations() {
       `);
       console.log("🌱 Base de datos: Ajustes de supervisor por defecto inicializados correctamente.");
     }
-    
+
+    // === Mensajería multiusuario: conexiones por usuario (WhatsApp y otros canales) ===
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS messaging_connections (
+        id VARCHAR(40) PRIMARY KEY,
+        owner_id VARCHAR(64),
+        channel_id VARCHAR(30) DEFAULT 'whatsapp',
+        label VARCHAR(120) DEFAULT 'WhatsApp',
+        phone_id VARCHAR(80),
+        business_account_id VARCHAR(80),
+        access_token TEXT,
+        verify_token VARCHAR(160),
+        phone_display VARCHAR(60),
+        forward_url TEXT,
+        forward_secret VARCHAR(200),
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    // Cada usuario tiene un public_id estable usado como su "User ID" de mensajería
+    await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS public_id VARCHAR(24);`);
+    // Cada conversación recuerda con qué conexión (número) entró/sale
+    await pool.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS connection_id VARCHAR(40);`);
+    // Backfill: generar public_id para usuarios que aún no lo tengan
+    await pool.query(`UPDATE agents SET public_id = 'u-' || substr(replace(id::text, '-', ''), 1, 10) WHERE public_id IS NULL OR public_id = '';`);
+
     console.log("✅ Migraciones y inicialización de base de datos ejecutadas correctamente.");
   } catch (err) {
     console.error("⚠️ Error ejecutando migraciones:", err.message);
@@ -379,6 +404,14 @@ async function handleApiDb(request, response, url) {
         agent = newRows[0];
       }
 
+      // Garantizar que el usuario tenga un public_id (su User ID de mensajería)
+      if (agent && !agent.public_id) {
+        const pid = "u-" + randomUUID().replace(/-/g, "").slice(0, 10);
+        await pool.query("UPDATE agents SET public_id = COALESCE(public_id, $1) WHERE id = $2", [pid, agent.id]);
+        const { rows: pidRows } = await pool.query("SELECT public_id FROM agents WHERE id = $1", [agent.id]);
+        agent.public_id = pidRows[0]?.public_id || pid;
+      }
+
       sendJson(response, 200, { success: true, agent });
       return;
     }
@@ -449,7 +482,7 @@ async function handleApiDb(request, response, url) {
           const channelId = convRows[0]?.channel_id;
           if (channelId) {
             try {
-              await sendOutgoingMessageToChannel(channelId, recipientId, text);
+              await sendOutgoingMessageToChannel(channelId, recipientId, text, conversationId);
             } catch (err) {
               console.error("❌ Falló el envío externo al canal:", err.message);
               sendJson(response, 500, { error: err.message });
@@ -868,6 +901,151 @@ async function handleApiDb(request, response, url) {
 
       sendJson(response, 201, { macro: rows[0] });
       return;
+    }
+
+    // === Conexiones de mensajería por usuario (multi-número) ===
+    if (url.pathname === "/api/messaging/connections") {
+      if (request.method === "GET") {
+        const owner = url.searchParams.get("owner");
+        const params = [];
+        let where = "";
+        if (owner) { params.push(owner); where = "WHERE owner_id = $1"; }
+        const { rows } = await pool.query(
+          `SELECT id, owner_id, channel_id, label, phone_id, business_account_id, verify_token,
+                  phone_display, forward_url, active, created_at,
+                  (access_token IS NOT NULL AND access_token <> '') AS has_token
+           FROM messaging_connections ${where} ORDER BY created_at ASC`, params);
+        sendJson(response, 200, { connections: rows });
+        return;
+      }
+      if (request.method === "POST") {
+        const p = await readJson(request);
+        const id = p.id || ("wa-" + randomUUID().replace(/-/g, "").slice(0, 12));
+        const verifyToken = p.verifyToken || ("vt-" + randomUUID().replace(/-/g, "").slice(0, 16));
+        const active = p.active === false ? false : true;
+        await pool.query(`
+          INSERT INTO messaging_connections
+            (id, owner_id, channel_id, label, phone_id, business_account_id, access_token, verify_token, phone_display, forward_url, forward_secret, active)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          ON CONFLICT (id) DO UPDATE SET
+            label = EXCLUDED.label,
+            phone_id = EXCLUDED.phone_id,
+            business_account_id = EXCLUDED.business_account_id,
+            access_token = CASE WHEN EXCLUDED.access_token IS NULL OR EXCLUDED.access_token = ''
+                                THEN messaging_connections.access_token ELSE EXCLUDED.access_token END,
+            verify_token = EXCLUDED.verify_token,
+            phone_display = EXCLUDED.phone_display,
+            forward_url = EXCLUDED.forward_url,
+            forward_secret = CASE WHEN EXCLUDED.forward_secret IS NULL OR EXCLUDED.forward_secret = ''
+                                  THEN messaging_connections.forward_secret ELSE EXCLUDED.forward_secret END,
+            active = EXCLUDED.active
+        `, [id, p.ownerId || null, p.channelId || "whatsapp", p.label || "WhatsApp", p.phoneId || null,
+            p.businessAccountId || null, p.accessToken || null, verifyToken, p.phoneDisplay || null,
+            p.forwardUrl || null, p.forwardSecret || null, active]);
+        const { rows } = await pool.query(
+          `SELECT id, owner_id, channel_id, label, phone_id, business_account_id, verify_token,
+                  phone_display, forward_url, active FROM messaging_connections WHERE id = $1`, [id]);
+        sendJson(response, 200, { connection: rows[0] });
+        return;
+      }
+    }
+
+    const connMatch = url.pathname.match(/^\/api\/messaging\/connections\/([^/]+)$/);
+    if (connMatch && request.method === "DELETE") {
+      await pool.query("DELETE FROM messaging_connections WHERE id = $1", [connMatch[1]]);
+      sendJson(response, 200, { success: true });
+      return;
+    }
+
+    // === Webhook por conexión: /api/webhooks/whatsapp/<connId> (multiusuario + reenvío a n8n) ===
+    const waConnMatch = url.pathname.match(/^\/api\/webhooks\/whatsapp\/([^/]+)$/);
+    if (waConnMatch) {
+      const connId = waConnMatch[1];
+      const { rows: connRows } = await pool.query("SELECT * FROM messaging_connections WHERE id = $1 LIMIT 1", [connId]);
+      const conn = connRows[0];
+
+      if (request.method === "GET") {
+        const mode = url.searchParams.get("hub.mode");
+        const token = url.searchParams.get("hub.verify_token");
+        const challenge = url.searchParams.get("hub.challenge");
+        if (conn && mode === "subscribe" && token && token === conn.verify_token) {
+          console.log(`✅ Webhook verificado para conexión ${connId} (usuario ${conn.owner_id})`);
+          response.writeHead(200, { "Content-Type": "text/plain" });
+          response.end(challenge);
+          return;
+        }
+        sendJson(response, 403, { error: "Fallo de verificación de token de webhook" });
+        return;
+      }
+
+      if (request.method === "POST") {
+        const payload = await readJson(request);
+        if (!conn) { sendJson(response, 404, { error: "Conexión no encontrada" }); return; }
+
+        // Reenvío a n8n u otra app (no bloquea la respuesta a Meta)
+        if (conn.forward_url) {
+          const headers = { "Content-Type": "application/json" };
+          if (conn.forward_secret) headers["X-Alvis-Secret"] = conn.forward_secret;
+          fetch(conn.forward_url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ connectionId: conn.id, ownerId: conn.owner_id, channel: "whatsapp", payload })
+          }).catch((e) => console.error(`⚠️ Error reenviando a forward_url (${conn.forward_url}):`, e.message));
+        }
+
+        const entry = payload.entry?.[0];
+        const value = entry?.changes?.[0]?.value;
+        const msg = value?.messages?.[0];
+        if (msg && msg.text?.body) {
+          const incomingText = msg.text.body;
+          const senderId = msg.from;
+          const contactName = value?.contacts?.[0]?.profile?.name || `WhatsApp User ${senderId}`;
+          const noteMarker = `WhatsApp Phone: ${senderId}`;
+          const cleanPhone = senderId.replace(/\D/g, "");
+          const plusPhone = "+" + cleanPhone;
+          const localPhone = cleanPhone.startsWith("1") ? cleanPhone.slice(1) : cleanPhone;
+
+          const { rows: cRows } = await pool.query(
+            `SELECT id FROM contacts WHERE phone = $1 OR phone = $2 OR phone = $3
+                OR notes LIKE $4 OR notes LIKE $5 OR notes LIKE $6 LIMIT 1`,
+            [cleanPhone, plusPhone, localPhone, `%WhatsApp Phone: ${cleanPhone}%`, `%WhatsApp Phone: ${plusPhone}%`, `%WhatsApp Phone: ${localPhone}%`]);
+
+          let contactId;
+          if (cRows.length > 0) {
+            contactId = cRows[0].id;
+          } else {
+            contactId = randomUUID();
+            await pool.query(
+              "INSERT INTO contacts (id, name, company_name, status, value, owner_id, notes, phone) VALUES ($1,$2,$3,'Nuevo',0,$4,$5,$6)",
+              [contactId, contactName, "WhatsApp Contact", conn.owner_id, noteMarker, senderId]);
+          }
+
+          let conversationId;
+          const { rows: convRows } = await pool.query(
+            "SELECT id FROM conversations WHERE contact_id = $1 AND channel_id = 'whatsapp' LIMIT 1", [contactId]);
+          if (convRows.length > 0) {
+            conversationId = convRows[0].id;
+            await pool.query("UPDATE conversations SET connection_id = $1 WHERE id = $2", [conn.id, conversationId]);
+          } else {
+            conversationId = randomUUID();
+            await pool.query(
+              "INSERT INTO conversations (id, channel_id, contact_id, inbox, status, priority, labels, last_message, owner_id, connection_id, responder) VALUES ($1,'whatsapp',$2,$3,'Abierta','Media',ARRAY[]::varchar[],$4,$5,$6,'bot')",
+              [conversationId, contactId, `WhatsApp · ${conn.label}`, incomingText, conn.owner_id, conn.id]);
+          }
+
+          await pool.query(
+            "INSERT INTO messages (id, conversation_id, direction, text, is_private) VALUES ($1,$2,'incoming',$3,false)",
+            [randomUUID(), conversationId, incomingText]);
+          await pool.query(
+            "UPDATE conversations SET last_message = $1, updated_at = NOW(), status = CASE WHEN status = 'Resuelta' THEN 'Abierta' ELSE status END WHERE id = $2",
+            [incomingText, conversationId]);
+
+          await handleBotResponse(conversationId, incomingText, false);
+        }
+
+        sendJson(response, 200, { success: true });
+        return;
+      }
     }
 
     if (webhookMatch || legacyWebhookMatch) {
@@ -1883,16 +2061,27 @@ async function getRecipientIdFromConversation(conversationId) {
   return null;
 }
 
-async function sendOutgoingMessageToChannel(channelId, recipientId, text) {
-  const { rows } = await pool.query("SELECT config FROM channels WHERE id = $1 LIMIT 1", [channelId]);
-  if (rows.length === 0) {
-    throw new Error(`Canal ${channelId} no encontrado en la base de datos.`);
+async function sendOutgoingMessageToChannel(channelId, recipientId, text, conversationId = null) {
+  // Para WhatsApp: usar las credenciales de la conexión (número) ligada a la conversación, si existe
+  let connPhoneId = null;
+  let connAccessToken = null;
+  if (channelId === "whatsapp" && conversationId) {
+    const { rows: connRows } = await pool.query(
+      `SELECT mc.phone_id, mc.access_token
+         FROM conversations c JOIN messaging_connections mc ON c.connection_id = mc.id
+        WHERE c.id = $1 LIMIT 1`, [conversationId]);
+    if (connRows.length > 0) {
+      connPhoneId = connRows[0].phone_id;
+      connAccessToken = connRows[0].access_token;
+    }
   }
-  const config = rows[0].config || {};
+
+  const { rows } = await pool.query("SELECT config FROM channels WHERE id = $1 LIMIT 1", [channelId]);
+  const config = rows[0]?.config || {};
 
   if (channelId === "whatsapp") {
-    const phoneId = config.phoneId;
-    const accessToken = config.accessToken;
+    const phoneId = connPhoneId || config.phoneId;
+    const accessToken = connAccessToken || config.accessToken;
     if (!phoneId || !accessToken) {
       throw new Error("Meta API: Falta Phone ID o Access Token en la configuración de WhatsApp.");
     }
@@ -2287,7 +2476,7 @@ async function handleBotResponse(conversationId, incomingText, isMemoryMode, mem
       const channelId = convRows[0]?.channel_id;
       if (channelId) {
         try {
-          await sendOutgoingMessageToChannel(channelId, recipientId, cleanText);
+          await sendOutgoingMessageToChannel(channelId, recipientId, cleanText, conversationId);
         } catch (botSendErr) {
           console.error(`❌ El bot no pudo enviar mensaje saliente al canal ${channelId}:`, botSendErr.message);
         }

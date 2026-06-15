@@ -2395,6 +2395,8 @@ function openChannelConfigModal(channelId) {
 
   let html = "";
   if (channel.id === "whatsapp") {
+    // Multi-número por usuario: abrir el gestor de conexiones
+    if (waConnectionsDialog) { openWhatsappConnections(); return; }
     const waCallbackUrl = `${state.publicUrl || location.origin}/api/webhooks/whatsapp`;
     html = `
       <label class="full-field">
@@ -3030,6 +3032,145 @@ recordForm.addEventListener("submit", (event) => {
     });
 });
 
+// ===== Gestor de conexiones de WhatsApp por usuario (multi-número + webhook saliente n8n) =====
+const waConnectionsDialog = document.querySelector("#waConnectionsDialog");
+
+function waWebhookUrl(connId) {
+  const base = state.publicUrl || location.origin;
+  return `${base}/api/webhooks/whatsapp/${connId}`;
+}
+
+async function openWhatsappConnections() {
+  if (!waConnectionsDialog) return;
+  const body = document.querySelector("#waConnectionsBody");
+  if (body) body.innerHTML = `<p style="color:var(--muted);">Cargando conexiones…</p>`;
+  if (typeof waConnectionsDialog.showModal === "function") waConnectionsDialog.showModal();
+  await renderWaConnections();
+}
+
+async function renderWaConnections() {
+  const body = document.querySelector("#waConnectionsBody");
+  if (!body) return;
+  const owner = state.agent?.id || "";
+  const userId = state.agent?.public_id || "—";
+  let connections = [];
+  try {
+    const res = await fetch(`/api/messaging/connections${owner ? `?owner=${encodeURIComponent(owner)}` : ""}`);
+    if (res.status === 404) {
+      body.innerHTML = `<p style="color:var(--danger);">Esta función requiere el backend con base de datos (PostgreSQL).</p>`;
+      return;
+    }
+    if (res.ok) connections = (await res.json()).connections || [];
+  } catch (e) {
+    body.innerHTML = `<p style="color:var(--danger);">No se pudieron cargar las conexiones: ${escapeHtml(e.message)}</p>`;
+    return;
+  }
+
+  const cards = connections.map((c) => waConnectionCard(c)).join("");
+  body.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;padding:10px 12px;background:var(--panel-soft);border:1px solid var(--line);border-radius:8px;">
+      <div>
+        <p style="margin:0;font-size:0.74rem;color:var(--muted);font-weight:700;">TU USER ID DE MENSAJERÍA</p>
+        <code style="font-size:0.95rem;color:var(--accent);font-weight:800;">${escapeHtml(userId)}</code>
+      </div>
+      <button type="button" class="primary-button" id="waAddConnBtn">+ Agregar número</button>
+    </div>
+    <div id="waConnList" style="display:grid;gap:14px;">
+      ${cards || `<p style="color:var(--muted);">Aún no tienes números de WhatsApp conectados. Agrega el primero.</p>`}
+    </div>`;
+
+  document.querySelector("#waAddConnBtn")?.addEventListener("click", () => {
+    const list = document.querySelector("#waConnList");
+    if (!list || list.querySelector('[data-new="1"]')) return;
+    const placeholder = list.querySelector("p");
+    if (placeholder) placeholder.remove();
+    list.insertAdjacentHTML("afterbegin", waConnectionCard({ id: "", label: "Nuevo número", active: true }, true));
+    bindWaCard(list.firstElementChild);
+  });
+  body.querySelectorAll("[data-conn-card]").forEach(bindWaCard);
+}
+
+function waConnectionCard(c, isNew = false) {
+  const id = c.id || "";
+  const urlField = id
+    ? `<label class="full-field">URL de Callback del Webhook (pégala en Meta → Webhooks)
+         <input type="text" readonly value="${escapeHtml(waWebhookUrl(id))}" onclick="this.select()" style="font-family:monospace;font-size:0.78rem;" /></label>
+       <label class="full-field">Verify Token (pégalo en Meta)
+         <input type="text" readonly value="${escapeHtml(c.verify_token || "")}" onclick="this.select()" style="font-family:monospace;font-size:0.78rem;" /></label>`
+    : `<p class="full-field" style="font-size:0.78rem;color:var(--muted);margin:0;">Guarda para generar la URL de webhook y el verify token únicos de este número.</p>`;
+  return `
+  <div data-conn-card data-id="${escapeHtml(id)}" ${isNew ? 'data-new="1"' : ""} style="border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--panel);">
+    <div class="form-grid">
+      <label>Nombre / etiqueta
+        <input name="label" value="${escapeHtml(c.label || "")}" placeholder="Ej. WhatsApp Ventas" /></label>
+      <label>Número visible (opcional)
+        <input name="phoneDisplay" value="${escapeHtml(c.phone_display || "")}" placeholder="+1 809 555 1234" /></label>
+      <label>Phone Number ID (Meta)
+        <input name="phoneId" value="${escapeHtml(c.phone_id || "")}" placeholder="1093850284938" /></label>
+      <label>WhatsApp Business Account ID
+        <input name="businessAccountId" value="${escapeHtml(c.business_account_id || "")}" placeholder="2093850284938" /></label>
+      <label class="full-field">Access Token (System User)
+        <input name="accessToken" type="password" placeholder="${c.has_token ? "•••••• guardado (deja vacío para mantener)" : "EAAG..."}" /></label>
+      ${urlField}
+      <label class="full-field">🔗 Webhook saliente / Forward URL (n8n u otra app)
+        <input name="forwardUrl" value="${escapeHtml(c.forward_url || "")}" placeholder="https://n8n.tuempresa.com/webhook/whatsapp" /></label>
+      <label class="full-field">Secreto del forward (opcional · header X-Alvis-Secret)
+        <input name="forwardSecret" type="password" placeholder="••••" /></label>
+    </div>
+    <div class="modal-actions" style="margin-top:14px;">
+      ${id ? `<button type="button" class="secondary-button" data-action="delete">Eliminar</button>` : ""}
+      <button type="button" class="primary-button" data-action="save">Guardar</button>
+    </div>
+    <p data-msg style="margin:8px 0 0;font-size:0.8rem;"></p>
+  </div>`;
+}
+
+function bindWaCard(card) {
+  if (!card) return;
+  card.querySelector('[data-action="save"]')?.addEventListener("click", () => saveWaCard(card));
+  card.querySelector('[data-action="delete"]')?.addEventListener("click", () => deleteWaCard(card));
+}
+
+async function saveWaCard(card) {
+  const get = (n) => card.querySelector(`[name="${n}"]`)?.value.trim() || "";
+  const msg = card.querySelector("[data-msg]");
+  const payload = {
+    id: card.dataset.id || undefined,
+    ownerId: state.agent?.id || null,
+    channelId: "whatsapp",
+    label: get("label") || "WhatsApp",
+    phoneDisplay: get("phoneDisplay"),
+    phoneId: get("phoneId"),
+    businessAccountId: get("businessAccountId"),
+    accessToken: get("accessToken"),
+    forwardUrl: get("forwardUrl"),
+    forwardSecret: get("forwardSecret")
+  };
+  if (msg) { msg.textContent = "Guardando…"; msg.style.color = "var(--muted)"; }
+  try {
+    const res = await fetch("/api/messaging/connections", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(((await res.json().catch(() => ({}))).error) || "Error al guardar");
+    await renderWaConnections();
+  } catch (e) {
+    if (msg) { msg.textContent = "❌ " + e.message; msg.style.color = "var(--danger)"; }
+  }
+}
+
+async function deleteWaCard(card) {
+  const id = card.dataset.id;
+  if (!id) { card.remove(); return; }
+  if (!confirm("¿Eliminar este número de WhatsApp?")) return;
+  try {
+    await fetch(`/api/messaging/connections/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await renderWaConnections();
+  } catch (e) {
+    const msg = card.querySelector("[data-msg]");
+    if (msg) { msg.textContent = "❌ " + e.message; msg.style.color = "var(--danger)"; }
+  }
+}
+
 const channelConfigForm = document.querySelector("#channelConfigForm");
 const channelConfigDialog = document.querySelector("#channelConfigDialog");
 
@@ -3126,6 +3267,14 @@ function initGoogleSignIn(clientId) {
   );
 }
 
+function setCurrentAgent(agent) {
+  if (!agent) return;
+  state.agent = agent;
+  try { localStorage.setItem("alvis-agent", JSON.stringify(agent)); } catch {}
+}
+// Restaurar el usuario actual de una sesión previa
+try { state.agent = state.agent || JSON.parse(localStorage.getItem("alvis-agent") || "null"); } catch { state.agent = state.agent || null; }
+
 async function handleCredentialResponse(response) {
   const credential = response.credential;
   try {
@@ -3142,6 +3291,7 @@ async function handleCredentialResponse(response) {
     
     const data = await authRes.json();
     if (data.success && data.agent) {
+      setCurrentAgent(data.agent);
       sessionStorage.setItem("alvis-session", "active");
       if (loginWrapper) loginWrapper.style.display = "none";
       if (appShell) appShell.style.display = "grid";
@@ -3206,6 +3356,7 @@ if (devBypassBtn) {
       
       const data = await authRes.json();
       if (data.success && data.agent) {
+        setCurrentAgent(data.agent);
         sessionStorage.setItem("alvis-session", "active");
         if (loginWrapper) loginWrapper.style.display = "none";
         if (appShell) appShell.style.display = "grid";

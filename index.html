@@ -202,6 +202,19 @@
       </form>
     </dialog>
 
+    <dialog id="waConnectionsDialog" class="modal">
+      <div style="padding: 22px;">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Mensajería · WhatsApp</p>
+            <h2>Números de WhatsApp conectados</h2>
+          </div>
+          <button class="icon-button" type="button" aria-label="Cerrar" title="Cerrar" onclick="this.closest('dialog').close()">×</button>
+        </div>
+        <div id="waConnectionsBody"></div>
+      </div>
+    </dialog>
+
     <script src="app.js"></script>
   </body>
 </html>

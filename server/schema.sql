@@ -208,3 +208,28 @@ CREATE TABLE IF NOT EXISTS campaigns (
     notes TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 16. Conexiones de Mensajería por Usuario (multi-número WhatsApp + webhook saliente a n8n/otras apps)
+-- Nota: estas columnas/tablas también se crean automáticamente en runMigrations() de server.mjs,
+-- por lo que en bases existentes NO requieren cambios manuales (se migran al reiniciar el servidor).
+-- 'id' y 'owner_id' son VARCHAR (no UUID) para coincidir con los slugs generados por la app.
+CREATE TABLE IF NOT EXISTS messaging_connections (
+    id VARCHAR(40) PRIMARY KEY,            -- slug usado en la URL del webhook (ej. 'wa-ab12cd34ef56')
+    owner_id VARCHAR(64),                  -- agents.id del usuario dueño de la conexión
+    channel_id VARCHAR(30) DEFAULT 'whatsapp',
+    label VARCHAR(120) DEFAULT 'WhatsApp', -- nombre visible del número
+    phone_id VARCHAR(80),                  -- Phone Number ID (Meta)
+    business_account_id VARCHAR(80),
+    access_token TEXT,                     -- token del System User (Meta)
+    verify_token VARCHAR(160),             -- token de verificación del webhook
+    phone_display VARCHAR(60),
+    forward_url TEXT,                      -- webhook saliente (n8n u otra app)
+    forward_secret VARCHAR(200),           -- enviado como header X-Alvis-Secret
+    active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_messaging_connections_owner ON messaging_connections(owner_id);
+
+-- Columnas añadidas para mensajería multiusuario
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS public_id VARCHAR(24);          -- "User ID" de mensajería
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS connection_id VARCHAR(40); -- conexión (número) usada
