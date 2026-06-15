@@ -2553,6 +2553,7 @@ body.inbox-mode .nav-category-header {
 .chatwoot-chats-list {
   height: calc(100vh - 100px - 44px - 36px) !important;
   padding: 6px 0 !important;
+  overflow-y: auto !important;
 }
 
 /* Chatwoot Chat Item Card */
@@ -2661,6 +2662,7 @@ body.inbox-mode .nav-category-header {
   height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden !important;
 }
 
 [data-theme="dark"] .chatwoot-chat-workspace {
@@ -2672,6 +2674,8 @@ body.inbox-mode .nav-category-header {
   grid-template-columns: 1fr auto;
   height: 100%;
   width: 100%;
+  min-height: 0 !important;
+  overflow: hidden !important;
 }
 
 .chatwoot-thread-panel {
@@ -2679,6 +2683,8 @@ body.inbox-mode .nav-category-header {
   flex-direction: column;
   height: 100%;
   min-width: 0;
+  min-height: 0 !important;
+  overflow: hidden !important;
 }
 
 /* Header styling */
@@ -2690,6 +2696,7 @@ body.inbox-mode .nav-category-header {
   background: #ffffff;
   border-bottom: 1px solid var(--line);
   min-height: 64px;
+  flex-shrink: 0 !important;
 }
 
 [data-theme="dark"] .chatwoot-thread-header {
@@ -2879,6 +2886,7 @@ body.inbox-mode .nav-category-header {
   flex-direction: column;
   gap: 6px !important;
   transition: background-color 0.2s ease;
+  flex-shrink: 0 !important;
 }
 
 [data-theme="dark"] .chatwoot-reply-box {
@@ -2995,6 +3003,8 @@ body.inbox-mode .nav-category-header {
   width: 280px;
   border-left: 1px solid var(--line);
   background: #ffffff;
+  height: 100% !important;
+  overflow-y: auto !important;
 }
 
 [data-theme="dark"] .chatwoot-contact-sidebar {
