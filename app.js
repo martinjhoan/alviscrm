@@ -204,6 +204,23 @@ async function bootstrapFromApi() {
 
     const apiState = await response.json();
     apiAvailable = true;
+
+    // --- Preservar la interacción del usuario antes del re-render del polling ---
+    // (evita que se borre lo que se está escribiendo y que el chat "salte" solo)
+    const prevComposer = document.querySelector("[data-composer]");
+    const composerSnapshot = prevComposer ? {
+      convId: prevComposer.dataset.conversationId,
+      value: prevComposer.value,
+      focused: document.activeElement === prevComposer,
+      selStart: prevComposer.selectionStart,
+      selEnd: prevComposer.selectionEnd
+    } : null;
+    const prevThread = document.querySelector(".chatwoot-message-thread, .message-thread");
+    const threadSnapshot = prevThread ? {
+      atBottom: Math.abs(prevThread.scrollHeight - prevThread.clientHeight - prevThread.scrollTop) < 48,
+      top: prevThread.scrollTop
+    } : null;
+
     state = normalizeState({
       ...apiState,
       activeView: state.activeView,
@@ -212,6 +229,22 @@ async function bootstrapFromApi() {
     });
     saveState();
     render();
+
+    // --- Restaurar lo que el usuario estaba haciendo ---
+    if (composerSnapshot) {
+      const nc = document.querySelector(`[data-composer][data-conversation-id="${composerSnapshot.convId}"]`);
+      if (nc) {
+        if (composerSnapshot.value) nc.value = composerSnapshot.value;
+        if (composerSnapshot.focused) {
+          nc.focus();
+          try { nc.setSelectionRange(composerSnapshot.selStart, composerSnapshot.selEnd); } catch {}
+        }
+      }
+    }
+    const newThread = document.querySelector(".chatwoot-message-thread, .message-thread");
+    if (newThread && threadSnapshot) {
+      newThread.scrollTop = threadSnapshot.atBottom ? newThread.scrollHeight : threadSnapshot.top;
+    }
   } catch {
     apiAvailable = false;
   }

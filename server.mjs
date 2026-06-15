@@ -2177,6 +2177,9 @@ async function handleBotResponse(conversationId, incomingText, isMemoryMode, mem
     history = conversation.messages || [];
   }
 
+  // 0. Si la conversación ya fue tomada por un agente humano, el bot NO debe responder
+  if (conversation.responder === "human") return;
+
   // 1. Check if bot is enabled
   if (settings.botEnabled === false) return;
 
@@ -2300,7 +2303,7 @@ async function handleBotResponse(conversationId, incomingText, isMemoryMode, mem
           role: m.role,
           content: m.content
         }));
-        const response = await fetch("https://api.openai.com/v1/messages", {
+        const response = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
