@@ -205,6 +205,16 @@ async function bootstrapFromApi() {
     const apiState = await response.json();
     apiAvailable = true;
 
+    // No re-renderizar mientras el usuario edita un campo de formulario (config del bot,
+    // conexiones, diálogos, etc.). Evita el "tic nervioso" que recrea el input cada 4s.
+    // El composer del inbox se maneja aparte (se preserva, no se salta).
+    const activeEl = document.activeElement;
+    const isEditableField = activeEl && /^(INPUT|TEXTAREA|SELECT)$/.test(activeEl.tagName);
+    const isInboxComposer = activeEl && activeEl.hasAttribute && activeEl.hasAttribute("data-composer");
+    if (isEditableField && !isInboxComposer) {
+      return; // se actualizará en el siguiente ciclo, al perder el foco
+    }
+
     // --- Preservar la interacción del usuario antes del re-render del polling ---
     // (evita que se borre lo que se está escribiendo y que el chat "salte" solo)
     const prevComposer = document.querySelector("[data-composer]");
@@ -2720,6 +2730,13 @@ function escapeJsString(str) {
   return String(str || "").replaceAll("'", "\\'").replaceAll("\n", "\\n");
 }
 
+function scrollInboxThreadToBottom() {
+  requestAnimationFrame(() => {
+    const thread = document.querySelector(".chatwoot-message-thread, .message-thread");
+    if (thread) thread.scrollTop = thread.scrollHeight;
+  });
+}
+
 async function sendComposerMessage(composer) {
   if (!composer) return;
   const text = composer.value.trim();
@@ -2737,6 +2754,7 @@ async function sendComposerMessage(composer) {
     composer.value = "";
     saveState();
     render();
+    scrollInboxThreadToBottom(); // mostrar siempre el último mensaje al enviar
   } catch (error) {
     alert(error.message);
   }
@@ -2869,6 +2887,7 @@ viewRoot.addEventListener("click", (event) => {
     selectedConversationId = conversationButton.dataset.openConversation;
     activeComposerMode = "reply";
     render();
+    scrollInboxThreadToBottom(); // abrir el chat mostrando el último mensaje
     return;
   }
   if (tabButton) {
